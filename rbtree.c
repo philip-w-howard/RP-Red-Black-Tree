@@ -489,9 +489,6 @@ void *rb_remove(rbtree_t *tree, unsigned long key)
 	rbnode_t *prev = NULL;
 	rbnode_t *next = NULL;
 	rbnode_t *swap = NULL;
-#ifndef RCU
-	rbnode_t *temp = NULL;
-#endif
 	void *value = NULL;
     int temp_color;
 
@@ -535,7 +532,10 @@ void *rb_remove(rbtree_t *tree, unsigned long key)
 				}
 			}
             swap->parent = prev;
-            
+
+            prev = swap;
+            next = swap->right;
+/*            
 #ifdef RCU
             // make sure all readers have seen the new location of swap
             // before hiding it's old location
@@ -549,6 +549,7 @@ void *rb_remove(rbtree_t *tree, unsigned long key)
             node->parent = swap;
 
             rcu_assign_pointer(node->left, NULL);   // swap->left guaranteed to be NULL
+*/
         } else {
 #ifdef RCU
             // exchange children of swap and node
@@ -573,88 +574,76 @@ void *rb_remove(rbtree_t *tree, unsigned long key)
                 new_node->parent = prev;
             }
 
-            // node is now temporarily out of the tree, but it's being
-            // deleted anyway, so that's OK
-
-            // need to make sure bprime is seen before path to node's 
-            // children is erased
+            // need to make sure bprime is seen before path to b is erased 
             rcu_synchronize(tree->lock);
 
-            rcu_assign_pointer(node->right, swap->right);
-            if (swap->right != NULL) swap->right->parent = node;
+            prev = swap->parent;
+            next = swap->right;
 
-            rcu_assign_pointer(node->left, NULL);
+            rcu_assign_pointer(prev->left, swap->right);
+            if (swap->right != NULL) swap->right->parent = prev;
 
-            rcu_assign_pointer(swap->parent->left, node);
-			node->parent = swap->parent;
-			
 			rcu_free(tree->lock, swap);
 #else
-            // exchange children of swap and node
-            rcu_assign_pointer(swap->left, node->left);
-            node->left->parent = swap;      // safe: checked above
-            rcu_assign_pointer(node->left, NULL);    // swap->left guaranteed to be NULL
+            prev = swap->parent;
+            next = swap->right;
 
-            temp = swap->right;
-            rcu_assign_pointer(swap->right, node->right);
+            // fix-up swap's left child (replacing a NULL child)
+            swap->left = node->left;
+            node->left->parent = swap;      // safe: checked above
+            //node->left = NULL;              // swap->left guaranteed to be NULL
+
+            // take swap temporarily out of the tree
+            swap->parent->left = swap->right;
+            if (swap->right != NULL) swap->right->parent = swap->parent;
+
+            // fix-up swap's right child
+            swap->right = node->right;
             node->right->parent = swap;     // safe: checked above
 
-            rcu_assign_pointer(node->right, temp);
-            if (temp != NULL) temp->parent = node;
-
-			tree->swap_copies++;
-            temp = swap->parent;
-            if (prev == NULL)
+            // put swap in new location
+            if (node->parent == NULL)
             {
-                rcu_assign_pointer(tree->root, swap);
-                swap->parent = prev;
+                tree->root = swap;
+                swap->parent = NULL;
             } else {
                 if (is_left(node)) {
-                    rcu_assign_pointer(prev->left, swap);
+                    node->parent->left = swap;
                 } else {
-                    rcu_assign_pointer(prev->right, swap);
+                    node->parent->right = swap;
 				}
-                swap->parent = prev;
-            }
-
-            if (temp == node)
-            {
-                rcu_assign_pointer(swap->right, node);
-                node->parent = swap;
-            } else {
-                rcu_assign_pointer(temp->left, node);          // swap is guaranteed on left
-                node->parent = temp;
+                swap->parent = node->parent;
             }
 #endif
         }
+    } else {
+        // the node is guaranteed to have a terminal child
+        prev = node->parent;
+        if (node->left == NULL)
+	    {
+            // no left branch; bump right branch up
+            next = node->right;
+	    } else {
+		    next = node->left;
+	    }
+
+        if (prev != NULL)
+        {
+		    if (is_left(node))
+            {
+			    rcu_assign_pointer(prev->left, next);
+            } else {
+                rcu_assign_pointer(prev->right, next);
+            }
+            if (next != NULL) next->parent = prev;
+        } else {
+		    rcu_assign_pointer(tree->root, next);
+		    if (next != NULL) next->parent = NULL;
+	    }
     }
 
-    //******************************** do the remove ***************************
-    // the node is guaranteed to have a terminal child
-    prev = node->parent;
-    if (node->left == NULL)
-	{
-        // no left branch; bump right branch up
-        next = node->right;
-	} else {
-		next = node->left;
-	}
-
-    if (prev != NULL)
-    {
-		if (is_left(node))
-        {
-			rcu_assign_pointer(prev->left, next);
-        } else {
-            rcu_assign_pointer(prev->right, next);
-        }
-        if (next != NULL) next->parent = prev;
-    } else {
-		rcu_assign_pointer(tree->root, next);
-		if (next != NULL) next->parent = NULL;
-	}
-
     //******************** rebalance *******************
+    // need node==deleted node, prev,next == parent,child of node in its swapped position
     if (node->color == RED || (next!=NULL && next->color == RED))
     {
         // case 1
