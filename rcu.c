@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <atomic_ops.h>
+#include <memory.h>
 #include <pthread.h>
 
 #include "lock.h"
@@ -25,15 +26,11 @@ static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
 
 #define RCU_MAX_BLOCKS      20
 
-typedef struct 
-{
-   __attribute__((__aligned__(CACHE_LINE_SIZE))) long long epoch;
-} epoch_t;
-
 typedef struct epoch_s
 {
-    epoch_t        epoch;
-    struct epoch_s *next;
+    __attribute__((__aligned__(CACHE_LINE_SIZE))) long long epoch;
+    volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
+        struct epoch_s *next;
 } epoch_list_t;
 
 typedef struct 
@@ -41,9 +38,6 @@ typedef struct
     void *block[RCU_MAX_BLOCKS];
     int head;
 } block_list_t;
-
-static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
-    long long *Thread_Epoch;
 
 typedef struct
 {
@@ -54,11 +48,14 @@ typedef struct
     volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         block_list_t block;
     __attribute__((__aligned__(CACHE_LINE_SIZE))) 
-        pthread_mutex_t rcu_gp_lock;
-    __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         pthread_mutex_t rcu_writer_lock;
 } rcu_lock_t;
 
+static __thread __attribute__((__aligned__(CACHE_LINE_SIZE))) 
+        epoch_list_t My_Thread_Epoch;
+static __thread __attribute__((__aligned__(CACHE_LINE_SIZE))) 
+        epoch_list_t *Thread_Epoch;
+rcu_lock_t My_Lock;
 //**********************************************
 unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
         unsigned long long c, unsigned long long d, unsigned long long e)
@@ -71,15 +68,13 @@ unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
 
     return Thread_Stats;
 }
-//static pthread_mutex_t rcu_gp_lock = PTHREAD_MUTEX_INITIALIZER;
-//static pthread_mutex_t rcu_writer_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void read_lock(void *lock)
 {
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
 
     Thread_Stats[STAT_READ]++;
-    *Thread_Epoch = rcu_lock->rcu_epoch + 1;
+    Thread_Epoch->epoch = rcu_lock->rcu_epoch + 1;
 
     // the following statement, though useless, is required if we want
     // to avoid a memory barrier. 
@@ -87,10 +82,10 @@ void read_lock(void *lock)
     // will never execute. Accessing Thread_Epoch is what gives us the
     // ordering guarantees we need (on an X86, anyway)
 #if defined(__i386__) || defined(__x86_64__)
-    if ( (*Thread_Epoch & 0x0001) == 0) lock_mb();
-    //lock_mb();
+    if ( (Thread_Epoch->epoch & 0x0001) == 0) lock_mb();
 #else
 #error("RCU need a memory barrier on this architecture");
+    //lock_mb();
 #endif
 
 }
@@ -99,7 +94,7 @@ void read_unlock(void *lock)
 {
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
 
-    *Thread_Epoch = rcu_lock->rcu_epoch;
+    Thread_Epoch->epoch = rcu_lock->rcu_epoch;
 }
 
 void write_lock(void *lock)
@@ -117,6 +112,72 @@ void write_unlock(void *lock)
     pthread_mutex_unlock(&rcu_lock->rcu_writer_lock);
 }
 
+void *lock_init()
+{
+    rcu_lock_t *lock;
+    //*********************************************
+    // the following line, if uncommented, will make RCU run much slower
+    // at higher thread counts. This is true even thought the malloc'd memory
+    // is never accessed.
+    //lock = (rcu_lock_t *)malloc(sizeof(rcu_lock_t));
+    //*********************************************
+    lock = &My_Lock;
+    memset(lock, 0xAB, sizeof(rcu_lock_t));
+
+    lock->epoch_list = NULL;
+    lock->rcu_epoch = 0;
+
+    lock->block.head = 0;
+    pthread_mutex_init(&lock->rcu_writer_lock, NULL);
+
+    return lock;
+}
+
+void lock_thread_init(void *lock, int thread_id)
+{
+    //*********************************************
+    // the following line, if uncommented, will make RCU run much slower
+    // at higher thread counts. This is true even thought the malloc'd memory
+    // is never accessed.
+    //epoch_list_t *epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
+    //*********************************************
+    int ii;
+    rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
+
+    //Thread_Epoch = epoch;
+    Thread_Epoch = &My_Thread_Epoch;
+
+    // initialize per thread counters
+    for (ii=1; ii<=NSTATS; ii++)
+    {
+        Thread_Stats[ii] = 0;
+    }
+    Thread_Stats[0] = NSTATS;
+
+    // create a thread private epoch 
+    //epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
+    //if (epoch == NULL)
+    //{
+        //exit(-1);
+    //}
+    
+	/* guard against multiple thread start-ups and grace periods */
+	pthread_mutex_lock(&rcu_lock->rcu_writer_lock);
+
+    // init the thread local epoch indirectly
+    //Thread_Epoch = &(epoch->epoch.epoch);   // Thread_Epoch points into the
+                                            // thread's epoch data structure
+                                            // just malloc'd
+    Thread_Epoch->epoch = rcu_lock->rcu_epoch;  // Thread is in the current epoch
+    Thread_Epoch->next = rcu_lock->epoch_list;
+
+    // add the new epoch into the list
+    rcu_lock->epoch_list = Thread_Epoch;
+
+	// Let other synchronize_rcu() instances move ahead.
+	pthread_mutex_unlock(&rcu_lock->rcu_writer_lock);
+}
+
 void rcu_synchronize(void *lock)
 {
     volatile epoch_list_t *list;
@@ -125,10 +186,6 @@ void rcu_synchronize(void *lock)
 
     Thread_Stats[STAT_SYNC]++;
     
-	// Only one synchronize_rcu() at a time.
-    // NOTE: This also serves as a barrier
-	//pthread_mutex_lock(&rcu_lock->rcu_gp_lock);
-
 	// Advance to a new grace-period number, enforce ordering.
     rcu_lock->rcu_epoch += 2;
     lock_mb();
@@ -141,8 +198,8 @@ void rcu_synchronize(void *lock)
     list = rcu_lock->epoch_list;
     while (list != NULL)
     {
-        while (list->epoch.epoch < rcu_lock->rcu_epoch && 
-            (list->epoch.epoch & 0x01)) 
+        while (list->epoch < rcu_lock->rcu_epoch && 
+            (list->epoch & 0x01)) 
         {
             Thread_Stats[STAT_SPINS]++;
             // wait
@@ -158,62 +215,11 @@ void rcu_synchronize(void *lock)
     while (head > 0)
     {
         head--;
-        rbnode_free(rcu_lock->block.block[head]);
+        //rbnode_free(rcu_lock->block.block[head]);
+        free(rcu_lock->block.block[head]);
     }
 
     rcu_lock->block.head = 0;
-
-	// Let other synchronize_rcu() instances move ahead.
-	//pthread_mutex_unlock(&rcu_lock->rcu_gp_lock);
-}
-
-void *lock_init()
-{
-    rcu_lock_t *lock = (rcu_lock_t *)malloc(sizeof(rcu_lock_t));
-
-    lock->epoch_list = NULL;
-    lock->rcu_epoch = 0;
-    //lock->block = {0,0,0};
-    lock->block.head = 0;
-    pthread_mutex_init(&lock->rcu_gp_lock, NULL);
-    pthread_mutex_init(&lock->rcu_writer_lock, NULL);
-
-    return lock;
-}
-
-void lock_thread_init(void *lock, int thread_id)
-{
-    epoch_list_t *epoch;
-    int ii;
-    rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
-
-    // initialize per thread counters
-    for (ii=1; ii<=NSTATS; ii++)
-    {
-        Thread_Stats[ii] = 0;
-    }
-    Thread_Stats[0] = NSTATS;
-
-    // create a thread private epoch 
-    epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
-    if (epoch == NULL)
-    {
-        exit(-1);
-    }
-    
-	/* guard against multiple thread start-ups and grace periods */
-	pthread_mutex_lock(&rcu_lock->rcu_gp_lock);
-
-    // init the thread local epoch indirectly
-    Thread_Epoch = &(epoch->epoch.epoch);
-    *Thread_Epoch = rcu_lock->rcu_epoch;
-    epoch->next = rcu_lock->epoch_list;
-
-    // add the new epoch into the list
-    rcu_lock->epoch_list = epoch;
-
-	/* Let other synchronize_rcu() instances move ahead. */
-	pthread_mutex_unlock(&rcu_lock->rcu_gp_lock);
 }
 
 void rcu_free(void *lock, void *ptr)

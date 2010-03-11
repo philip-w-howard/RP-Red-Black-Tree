@@ -41,6 +41,7 @@ typedef struct
     int update_percent;
     int mode;
     int write_elem;
+    void *lock;
 } thread_data_t;
 
 #define GOFLAG_INIT 0
@@ -49,7 +50,7 @@ typedef struct
 
 volatile int goflag = GOFLAG_INIT;
 rbtree_t My_Tree;
-void *My_Lock;
+//void *My_Lock;
 
 unsigned long get_random(unsigned long *seed)
 {
@@ -66,14 +67,14 @@ void waste_time()
     memset(foo, 1, 5);
     free(foo);
 }
-void init_tree_data(int count)
+void init_tree_data(int count, void *lock)
 {
     int ii;
     unsigned long seed = 0;
     unsigned long value;
 
     Values = (unsigned long *)malloc(count*sizeof(unsigned long));
-    rb_create(&My_Tree, My_Lock);
+    rb_create(&My_Tree, lock);
 
     for (ii=0; ii<count; ii++)
     {
@@ -112,7 +113,7 @@ void *perftest_thread(void *arg)
     unsigned long long n_delete_fails = 0;
 
     //set_affinity(0);
-    lock_thread_init(My_Lock, thread_index);
+    lock_thread_init(thread_data->lock, thread_index);
     lock_mb();
 
 	while (goflag == GOFLAG_INIT)
@@ -175,7 +176,9 @@ int main(int argc, char *argv[])
     unsigned long long tot_stats[MAX_STATS];
     thread_data_t thread_data[MAX_THREADS];
     int delay = 1;
+    int work_delay = 1;
     int mode = MODE_WRITE;
+    void *lock;
 
 	if (argc > 1) nthreads = atoi(argv[1]);
     if (argc > 2)
@@ -209,6 +212,10 @@ int main(int argc, char *argv[])
         tot_stats[ii] = 0;
     }
 
+    lock = lock_init();
+    lock_thread_init(lock, 0);
+    init_tree_data(Tree_Size, lock);
+
     printf("%s_%d Test: threads %d mode %d\n", 
             implementation_name(), Tree_Size, nthreads, mode);
 
@@ -224,11 +231,8 @@ int main(int argc, char *argv[])
             thread_data[ii].write_elem = Tree_Size/2;
         else if (mode == MODE_WRITE_SEP)
             thread_data[ii].write_elem = Tree_Size/2 - 3*nthreads/2 + ii*3;
+        thread_data[ii].lock = lock;
     }
-
-    My_Lock = lock_init();
-    lock_thread_init(My_Lock, 0);
-    init_tree_data(Tree_Size);
 
 	for (ii = 0; ii < nthreads; ii++)
     {
@@ -250,7 +254,7 @@ int main(int argc, char *argv[])
 	sleep(delay);
 	goflag = GOFLAG_RUN;
 	lock_mb();
-	sleep(delay);
+	sleep(work_delay);
 	lock_mb();
 	goflag = GOFLAG_STOP;
 	lock_mb();

@@ -63,7 +63,7 @@ static void output(info_t *dataset)
     n_tests = 0;
     while (n_tests < MAX_TESTS && dataset[n_tests].test != NULL)
     {
-        printf(" %s_reads %s_writes", dataset[n_tests].test, dataset[n_tests].test);
+        printf("\t%s_reads\t%s_writes", dataset[n_tests].test, dataset[n_tests].test);
         n_tests++;
     }
     printf("\n");
@@ -80,7 +80,7 @@ static void output(info_t *dataset)
                 fprintf(stderr, "dataset mismatch\n");
                 exit(-1);
             }
-            printf(" %lld %lld", dataset[ii].reads, dataset[ii].writes);
+            printf("\t%lld\t%lld", dataset[ii].reads, dataset[ii].writes);
             if (dataset[ii].next == NULL)
             {
                 dataset[0].test = NULL;

@@ -1,9 +1,11 @@
+#include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
 
 #include "rbnode.h"
 
-#define STACK_SIZE      10
+#define STACK_SIZE      20
 
 static unsigned long Index = 0;
 static void *Block[STACK_SIZE];
@@ -12,17 +14,28 @@ static int Top = 0;
 static void *rb_alloc(size_t size)
 {
     if (Top != 0) 
+    {
         return Block[--Top];
+    }
     else
-        return malloc(size);
+    {
+        void *ptr =  malloc(size);
+        return ptr;
+    }
 }
 //***********************************
 void rbnode_free(void *ptr)
 {
+    assert(ptr != NULL);
+
     if (Top < STACK_SIZE)
+    {
         Block[Top++] = ptr;
+    }
     else
+    {
         free(ptr);
+    }
 }
 //***********************************
 rbnode_t *rbnode_create(unsigned long key, void *value)
@@ -41,7 +54,7 @@ rbnode_t *rbnode_create(unsigned long key, void *value)
 //***********************************
 rbnode_t *rbnode_copy(rbnode_t *node)
 {
-	rbnode_t *newnode = (rbnode_t *)malloc(sizeof(rbnode_t));
+	rbnode_t *newnode = (rbnode_t *)rb_alloc(sizeof(rbnode_t));
 	memcpy(newnode, node, sizeof(rbnode_t));
 	newnode->index = Index++;
 

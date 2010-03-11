@@ -14,5 +14,6 @@ for SIZE in 64 65536; do
     done
 done
 
-awk -f decode.awk redblack.log | parse > redblack.txt
+awk -f decode.awk redblack.log >redblack.txt
+parse <redblack.txt >redblack_p.txt
 

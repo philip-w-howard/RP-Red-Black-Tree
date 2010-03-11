@@ -1,3 +1,7 @@
+//******************************************************
+// 
+// Red/Black Tree implementation by Phil Howard
+//
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>

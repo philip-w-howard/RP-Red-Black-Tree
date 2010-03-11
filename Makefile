@@ -1,5 +1,4 @@
-
-CFLAGS = -Wall -g -pthread -O1 # -ltcmalloc
+CFLAGS = -Wall -pthread -g # -O1 -pg -ltcmalloc
 
 all: rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock parse
 
@@ -35,7 +34,7 @@ rb_lock: rbmain.c $(all_objs)
 	cc -o rb_lock $(CFLAGS) rbmain.c $(objects) lock.o
 
 rb_nolock: rbmain.c $(all_objs) 
-	cc -c rbtree.c $(CFLAGS) 
+	cc -c rbtree.c $(CFLAGS) -DRCU
 	cc -o rb_nolock $(CFLAGS) rbmain.c $(objects) nolock.o
 
 parse: parse.c Makefile
