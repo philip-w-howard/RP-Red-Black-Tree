@@ -18,4 +18,5 @@ void rb_insert(rbtree_t *tree, unsigned long key, void *value);
 void *rb_remove(rbtree_t *tree, unsigned long key);
 void rb_output_list(rbtree_t *tree);
 void rb_output(rbtree_t *tree);
+int rb_valid(rbtree_t *tree);
 #endif

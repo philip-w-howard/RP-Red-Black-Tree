@@ -34,7 +34,7 @@ rb_lock: rbmain.c $(all_objs)
 	cc -o rb_lock $(CFLAGS) rbmain.c $(objects) lock.o
 
 rb_nolock: rbmain.c $(all_objs) 
-	cc -c rbtree.c $(CFLAGS) -DRCU
+	cc -c rbtree.c $(CFLAGS) 
 	cc -o rb_nolock $(CFLAGS) rbmain.c $(objects) nolock.o
 
 parse: parse.c Makefile

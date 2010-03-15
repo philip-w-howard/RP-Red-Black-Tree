@@ -109,12 +109,11 @@ void write_unlock(void *vlock)
     AO_fetch_and_add_full(&lock->reader_count_and_flag, -1);
 }
 //**********************************************
+/*
 void rcu_synchronize(void *lock)
 {
     assert(0);
 }
 
-void rcu_free(void *lock, void *ptr) 
-{
-    free(ptr);
-}
+*/
+void rcu_free(void *lock, void (*func)(void *ptr), void *ptr) {func(ptr);}

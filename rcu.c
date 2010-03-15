@@ -33,9 +33,14 @@ typedef struct epoch_s
         struct epoch_s *next;
 } epoch_list_t;
 
+typedef struct
+{
+    void *block;
+    void (*func)(void *ptr);
+} block_item_t;
 typedef struct 
 {
-    void *block[RCU_MAX_BLOCKS];
+    block_item_t block[RCU_MAX_BLOCKS];
     int head;
 } block_list_t;
 
@@ -210,19 +215,21 @@ void rcu_synchronize(void *lock)
 
     // since a grace period just expired, we might as well clear out the
     // delete buffer
-    //tail = rcu_lock->block.tail;
     head = rcu_lock->block.head;
     while (head > 0)
     {
+        void (*func)(void *ptr);
+
         head--;
         //rbnode_free(rcu_lock->block.block[head]);
-        free(rcu_lock->block.block[head]);
+        func = rcu_lock->block.block[head].func;
+        func(rcu_lock->block.block[head].block);
     }
 
     rcu_lock->block.head = 0;
 }
 
-void rcu_free(void *lock, void *ptr)
+void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
 {
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
 
@@ -231,6 +238,7 @@ void rcu_free(void *lock, void *ptr)
     if (rcu_lock->block.head >= RCU_MAX_BLOCKS-1) rcu_synchronize(lock);
 
 
-    rcu_lock->block.block[rcu_lock->block.head] = ptr;
+    rcu_lock->block.block[rcu_lock->block.head].block = ptr;
+    rcu_lock->block.block[rcu_lock->block.head].func = func;
     rcu_lock->block.head++;
 }

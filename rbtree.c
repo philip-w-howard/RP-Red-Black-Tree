@@ -10,6 +10,8 @@
 #include "rbtree.h"
 #include "lock.h"
 //**************************************
+static int invalid_node(rbnode_t *node, int depth);
+//**************************************
 static char *toString(rbnode_t *node)
 {
     static char buff[100];
@@ -21,8 +23,6 @@ static char *toString(rbnode_t *node)
 //*******************************
 static int is_left(rbnode_t *node)
 {
-    assert(node != NULL);
-
     if (node->parent->left == node)
         return 1;
     else
@@ -46,17 +46,15 @@ static rbnode_t *find_node(rbtree_t *tree, unsigned long key)
 {
 	rbnode_t *node = rcu_dereference(tree->root);
 
-	while (node != NULL)
+	while (node != NULL && key != node->key)
 	{
-		if (key == node->key) 
-            return node;
-		else if (key < node->key) 
+		if (key < node->key) 
             node = rcu_dereference(node->left);
 		else 
             node = rcu_dereference(node->right);
 	}
 
-	return NULL;
+	return node;
 }
 //*******************************
 void *rb_find(rbtree_t *tree, unsigned long key)
@@ -80,8 +78,6 @@ void *rb_find(rbtree_t *tree, unsigned long key)
 //*******************************
 static rbnode_t *sibling(rbnode_t *node)
 {
-    assert( (node->parent != NULL) );
-
     if (node->parent->left == node)
         return node->parent->right;
     else
@@ -130,7 +126,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         *b = parent;
         *c = cprime;
 		
-		rcu_free(tree->lock, grandparent);
+		rcu_free(tree->lock, rbnode_free, grandparent);
 		
     } 
     else if (grandparent->left == parent && parent->right == node)
@@ -170,7 +166,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
 		*a = parent;
         *b = bprime;
         *c = grandparent;
-		rcu_free(tree->lock, node);
+		rcu_free(tree->lock, rbnode_free, node);
 	}
     else if (parent->right == node && grandparent->right == parent)
     {
@@ -200,7 +196,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         *a = aprime;
         *b = parent;
         *c = node;
-		rcu_free(tree->lock, grandparent);
+		rcu_free(tree->lock, rbnode_free, grandparent);
     }
     else
     {
@@ -239,7 +235,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         *a = grandparent;
         *b = bprime;
         *c = parent;
-		rcu_free(tree->lock, node);
+		rcu_free(tree->lock, rbnode_free, node);
    }
 #else
     rbnode_t *greatgrandparent = grandparent->parent;
@@ -412,7 +408,6 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
     rbnode_t *z;
     rbnode_t *a, *b, *c;
 
-    assert(y != NULL);
     if (y->color == BLACK)
     {
         z = NULL;
@@ -587,7 +582,7 @@ void *rb_remove(rbtree_t *tree, unsigned long key)
             rcu_assign_pointer(prev->left, swap->right);
             if (swap->right != NULL) swap->right->parent = prev;
 
-			rcu_free(tree->lock, swap);
+			rcu_free(tree->lock, rbnode_free, swap);
 #else
             prev = swap->parent;
             next = swap->right;
@@ -669,7 +664,7 @@ void *rb_remove(rbtree_t *tree, unsigned long key)
     value = node->value;
 
     // Has a grace period already expired? Can we safely just free?
-    rcu_free(tree->lock, node);
+    rcu_free(tree->lock, rbnode_free, node);
 
     //printf("rb_remove write_unlock\n");
     write_unlock(tree->lock);
@@ -678,12 +673,22 @@ void *rb_remove(rbtree_t *tree, unsigned long key)
 //**************************************
 static void output_list(rbnode_t *node, int depth)
 {
+    if (depth > 32)
+    {
+        printf("Depth too deep for a valid tree\n");
+        return;
+    }
+
     if (node != NULL)
     {
         output_list(node->left, depth+1);
         printf("depth: %d value: %s", depth, toString(node));
         printf(" l: %s", toString(node->left));
-        printf(" r: %s\n", toString(node->right));
+        printf(" r: %s", toString(node->right));
+        if (invalid_node(node, depth)) 
+            printf(" INVALID NODE: %d\n", invalid_node(node, depth));
+        else
+            printf("\n");
         output_list(node->right, depth+1);
     }
 }
@@ -755,4 +760,39 @@ void rb_output(rbtree_t *tree)
     o_rows = NULL;
     o_nrows = 0;
 
+}
+//**************************************
+static int rec_invalid_node(rbnode_t *node, int depth)
+{
+    int invalid;
+
+    if (node == NULL) return 0;
+
+    invalid = invalid_node(node, depth);
+    if (invalid) return invalid;
+
+    if (node == NULL) return 0;
+
+    invalid = rec_invalid_node(node->left, depth+1);
+    if (invalid) return invalid;
+
+    invalid = rec_invalid_node(node->right, depth+1);
+    if (invalid) return invalid;
+
+    return 0;
+}
+//**************************************
+static int invalid_node(rbnode_t *node, int depth)
+{
+    if (depth > 32) return 1;
+    if (node == NULL) return 0;
+    if (node->left  != NULL && node->key < node->left->key)  return 2;
+    if (node->right != NULL && node->key > node->right->key) return 3;
+
+    return 0;
+}
+//***************************************
+int rb_valid(rbtree_t *tree)
+{
+    return !rec_invalid_node(tree->root, 0);
 }

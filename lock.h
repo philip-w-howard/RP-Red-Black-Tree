@@ -18,9 +18,13 @@ void read_unlock(void *lock);
 void write_lock(void *lock);
 void write_unlock(void *lock);
 void rcu_synchronize(void *lock);
-void rcu_free(void *lock, void *ptr);
+void rcu_free(void *lock, void (*func)(void *ptr), void *ptr);
 
+#ifdef RCU
 #define rcu_assign_pointer(p, v) ({ lock_mb(); (p) = (v); })
+#else
+#define rcu_assign_pointer(p,v) ({(p) = (v);})
+#endif
 
 /* Assume DEC Alpha is dead.  Long live DEC Alpha. */
 #define rcu_dereference(p) (*(volatile typeof(p) *)&(p))
