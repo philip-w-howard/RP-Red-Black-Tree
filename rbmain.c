@@ -16,6 +16,10 @@
  * Test variables.
  */
 
+#ifndef NUM_CPUS
+#define NUM_CPUS 16
+#endif
+
 #define MAX_STATS       20
 #define MAX_THREADS     128
 #define NUM_UPDATE_OPS  3
@@ -88,10 +92,17 @@ void set_affinity(int cpu_number)
 {
     int result;
     cpu_set_t cpu;
+    while (cpu_number >= NUM_CPUS)
+    {
+        cpu_number -= NUM_CPUS;
+    }
     CPU_ZERO(&cpu);
     CPU_SET(cpu_number, &cpu);
     result = sched_setaffinity(0, sizeof(cpu_set_t), &cpu);
-    printf("Affinity result %d %d %d\n", cpu_number, result, errno);
+    if (result != 0) 
+    {
+        printf("Affinity result %d %d %d\n", cpu_number, result, errno);
+    }
 }
 
 void *perftest_thread(void *arg)
@@ -112,7 +123,7 @@ void *perftest_thread(void *arg)
     unsigned long long n_deletes = 0;
     unsigned long long n_delete_fails = 0;
 
-    set_affinity(thread_data->thread_index);
+    set_affinity(thread_index);
     lock_thread_init(thread_data->lock, thread_index);
     lock_mb();
 
@@ -139,27 +150,32 @@ void *perftest_thread(void *arg)
                 else
                     n_delete_fails++;
 
+                /*
                 if (!rb_valid(&My_Tree)) 
                 {
                     rb_output_list(&My_Tree);
                     fprintf(stderr, "Invalid tree\n");
                     exit(-1);
                 }
+                */
 
                 int_value = get_random(&random_seed) % Tree_Scale + 1;
                 Values[write_elem] = int_value;
                 rb_insert(&My_Tree, int_value, &int_value);
                 n_inserts++;
-
+                /*
                 if (!rb_valid(&My_Tree)) 
                 {
                     rb_output_list(&My_Tree);
                     fprintf(stderr, "Invalid tree\n");
                     exit(-1);
                 }
+                */
             }
             break;
     }
+
+    lock_thread_close(thread_data->lock, thread_index);
 
     return get_thread_stats(n_reads, n_inserts, n_insert_fails, 
             n_deletes, n_delete_fails);
@@ -189,7 +205,7 @@ int main(int argc, char *argv[])
     unsigned long long tot_stats[MAX_STATS];
     thread_data_t thread_data[MAX_THREADS];
     int delay = 1;
-    int work_delay = 10;
+    int work_delay = 1;
     int mode = MODE_WRITE;
     void *lock;
 
@@ -292,9 +308,7 @@ int main(int argc, char *argv[])
     }
     printf("\n\n");
 
-    if (!rb_valid(&My_Tree)) 
-    {
-        rb_output_list(&My_Tree);
-    }
+    if (!rb_valid(&My_Tree)) rb_output_list(&My_Tree);
+
     return 0;
 }

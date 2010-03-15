@@ -124,9 +124,9 @@ void *lock_init()
     // the following line, if uncommented, will make RCU run much slower
     // at higher thread counts. This is true even thought the malloc'd memory
     // is never accessed.
-    //lock = (rcu_lock_t *)malloc(sizeof(rcu_lock_t));
+    lock = (rcu_lock_t *)malloc(sizeof(rcu_lock_t));
     //*********************************************
-    lock = &My_Lock;
+    //lock = &My_Lock;
     memset(lock, 0xAB, sizeof(rcu_lock_t));
 
     lock->epoch_list = NULL;
@@ -144,13 +144,13 @@ void lock_thread_init(void *lock, int thread_id)
     // the following line, if uncommented, will make RCU run much slower
     // at higher thread counts. This is true even thought the malloc'd memory
     // is never accessed.
-    //epoch_list_t *epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
+    epoch_list_t *epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
     //*********************************************
     int ii;
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
 
-    //Thread_Epoch = epoch;
-    Thread_Epoch = &My_Thread_Epoch;
+    Thread_Epoch = epoch;
+    //Thread_Epoch = &My_Thread_Epoch;
 
     // initialize per thread counters
     for (ii=1; ii<=NSTATS; ii++)
@@ -182,6 +182,8 @@ void lock_thread_init(void *lock, int thread_id)
 	// Let other synchronize_rcu() instances move ahead.
 	pthread_mutex_unlock(&rcu_lock->rcu_writer_lock);
 }
+
+void lock_thread_close(void *arg, int thread_id) {}
 
 void rcu_synchronize(void *lock)
 {

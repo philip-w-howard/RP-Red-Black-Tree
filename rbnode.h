@@ -19,5 +19,6 @@ typedef struct rbnode_s
 rbnode_t *rbnode_create(unsigned long key, void *value);
 rbnode_t *rbnode_copy(rbnode_t *node);
 void rbnode_free(void *ptr);
+int rbnode_invalid(rbnode_t *node, int depth);
 
 #endif

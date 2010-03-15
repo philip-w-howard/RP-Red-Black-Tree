@@ -36,6 +36,8 @@ void lock_thread_init(void *lock, int thread_id)
     }
     Thread_Stats[0] = NSTATS;
 }
+
+void lock_thread_close(void *arg, int thread_id) {}
 void *lock_init() { return NULL; }
 void read_lock(void *lock) { Thread_Stats[STAT_READ]++; }
 void read_unlock(void *lock) {}

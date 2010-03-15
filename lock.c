@@ -25,6 +25,8 @@ void lock_thread_init(void *lock, int thread_id)
     }
     Thread_Stats[0] = NSTATS;
 }
+
+void lock_thread_close(void *arg, int thread_id) {}
 void *lock_init()
 {
     pthread_mutex_t *lock = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t));
