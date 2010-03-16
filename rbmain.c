@@ -35,8 +35,8 @@ typedef struct
 
 #define MODE_READONLY       0
 #define MODE_WRITE          1
-#define MODE_WRITE_SAME     2
-#define MODE_WRITE_SEP      3
+#define MODE_TRAVERSE       2
+#define MODE_TRAVERSEW      3
 
 typedef struct
 {
@@ -56,6 +56,38 @@ volatile int goflag = GOFLAG_INIT;
 rbtree_t My_Tree;
 //void *My_Lock;
 
+#define RING_SIZE 50
+
+typedef struct
+{
+    char op[RING_SIZE];
+    long value[RING_SIZE];
+    int head;
+    int count;
+} op_ring_buff_t;
+static void ring_insert(op_ring_buff_t *ring, char op, long value)
+{
+    ring->op[ring->head] = op;
+    ring->value[ring->head] = value;
+    ring->head++;
+    if (ring->head >= RING_SIZE) ring->head = 0;
+    ring->count++;
+}
+static void ring_output(op_ring_buff_t *ring)
+{
+    int count = ring->count;
+    int head  = ring->head;
+    if (count > RING_SIZE) count = RING_SIZE;
+
+    printf("ring: ");
+    while (count-- > 0)
+    {
+        head--;
+        if (head < 0) head = RING_SIZE-1;
+        printf(" %c%ld", ring->op[head], ring->value[head]);
+    }
+    printf("\n");
+}
 unsigned long get_random(unsigned long *seed)
 {
     unsigned int val = *seed;
@@ -83,7 +115,10 @@ void init_tree_data(int count, void *lock)
     for (ii=0; ii<count; ii++)
     {
         value = get_random(&seed) % Tree_Scale + 1;
-        rb_insert(&My_Tree, value, &value);
+        while ( !rb_insert(&My_Tree, value, (void *)value) )
+        {
+            value = get_random(&seed) % Tree_Scale + 1;
+        }
         Values[ii] = value;
     }
 }
@@ -116,12 +151,18 @@ void *perftest_thread(void *arg)
     //unsigned long random_seed = random();
     void *value;
     unsigned long int_value;
+    long key=0;
+    long new_key=0;
 
     unsigned long long n_reads = 0;
     unsigned long long n_inserts = 0;
     unsigned long long n_insert_fails = 0;
     unsigned long long n_deletes = 0;
     unsigned long long n_delete_fails = 0;
+
+    op_ring_buff_t ring;
+    ring.head = 0;
+    ring.count = 0;
 
     set_affinity(thread_index);
     lock_thread_init(thread_data->lock, thread_index);
@@ -132,6 +173,35 @@ void *perftest_thread(void *arg)
 
     switch (thread_data->mode)
     {
+        case MODE_TRAVERSE:
+            while (goflag == GOFLAG_RUN) 
+            {
+                value = rb_first(&My_Tree, &new_key);
+                assert(new_key == -1);
+
+                while (value != NULL)
+                {
+                    key = new_key;
+                    value = rb_next(&My_Tree, key, &new_key);
+                    if (value != NULL && key >= new_key)
+                    {
+                        write_lock(My_Tree.lock);
+                        printf("******************************************\n"
+                               "%s\nkey: %ld new: %ld\n"
+                               "******************************************\n", 
+                               (char *)value, key, new_key);
+                        //rb_output(&My_Tree);
+                        goflag = GOFLAG_STOP;
+                        write_unlock(My_Tree.lock);
+                        return get_thread_stats(n_reads, n_inserts, n_insert_fails, 
+                            n_deletes, n_delete_fails);
+                    }
+                }
+
+                assert(key == Tree_Scale + 1);
+                n_reads++;
+            }
+            break;
         case MODE_READONLY:
             while (goflag == GOFLAG_RUN) 
             {
@@ -145,6 +215,7 @@ void *perftest_thread(void *arg)
             {
                 write_elem = get_random(&random_seed) % Tree_Size;
                 value = rb_remove(&My_Tree, Values[write_elem]);
+                ring_insert(&ring, 'D', Values[write_elem]);
                 if (value != NULL)
                     n_deletes++;
                 else
@@ -160,8 +231,12 @@ void *perftest_thread(void *arg)
                 */
 
                 int_value = get_random(&random_seed) % Tree_Scale + 1;
+                while ( !rb_insert(&My_Tree, int_value, (void *)int_value) )
+                {
+                    int_value = get_random(&random_seed) % Tree_Scale + 1;
+                }
                 Values[write_elem] = int_value;
-                rb_insert(&My_Tree, int_value, &int_value);
+                //ring_insert(&ring, 'I', Values[write_elem]);
                 n_inserts++;
                 /*
                 if (!rb_valid(&My_Tree)) 
@@ -172,6 +247,7 @@ void *perftest_thread(void *arg)
                 }
                 */
             }
+            //ring_output(&ring);
             break;
     }
 
@@ -188,7 +264,7 @@ void *perftest_thread(void *arg)
 void usage(int argc, char *argv[])
 {
 	fprintf(stderr, 
-       "Usage: %s nthreads [[[READ | WRITE] init] max_elem]\n",
+       "Usage: %s nthreads [[[READ | WRITE | TRAVERSE | TRAVERSEW ] init] max_elem]\n",
 
        argv[0]);
 	exit(-1);
@@ -216,12 +292,10 @@ int main(int argc, char *argv[])
             mode = MODE_READONLY;
         else if (strcmp(argv[2], "WRITE") == 0)
             mode = MODE_WRITE;
-        else if (strcmp(argv[2], "RANDOM") == 0)
-            mode = MODE_WRITE;
-        else if (strcmp(argv[2], "SAME") == 0)
-            mode = MODE_WRITE;
-        else if (strcmp(argv[2], "SEP") == 0)
-            mode = MODE_WRITE;
+        else if (strcmp(argv[2], "TRAVERSE") == 0)
+            mode = MODE_TRAVERSE;
+        else if (strcmp(argv[2], "TRAVERSEW") == 0)
+            mode = MODE_TRAVERSEW;
         else
             usage(argc, argv);
     }
@@ -245,6 +319,13 @@ int main(int argc, char *argv[])
     lock_thread_init(lock, 0);
     init_tree_data(Tree_Size, lock);
 
+    if (mode == MODE_TRAVERSE || mode == MODE_TRAVERSEW)
+    {
+        unsigned long value;
+        rb_insert(&My_Tree, -1, &value);
+        rb_insert(&My_Tree, Tree_Scale + 1, &value);
+    }
+
     printf("%s_%d Test: threads %d mode %d\n", 
             implementation_name(), Tree_Size, nthreads, mode);
 
@@ -254,12 +335,14 @@ int main(int argc, char *argv[])
         //thread_data[ii].update_percent = update_percent;
         if (mode == MODE_WRITE && ii>0)
             thread_data[ii].mode = MODE_READONLY;
+        else if (mode == MODE_TRAVERSEW && ii==0)
+        {
+            thread_data[ii].mode = MODE_WRITE;
+            mode = MODE_TRAVERSE;
+        }
         else
             thread_data[ii].mode = mode;
-        if (mode == MODE_WRITE_SAME)
-            thread_data[ii].write_elem = Tree_Size/2;
-        else if (mode == MODE_WRITE_SEP)
-            thread_data[ii].write_elem = Tree_Size/2 - 3*nthreads/2 + ii*3;
+
         thread_data[ii].lock = lock;
     }
 
@@ -280,6 +363,8 @@ int main(int argc, char *argv[])
     //{
         //printf("Realtime scheduling not active\n");
     //}
+    //rb_output(&My_Tree);
+
 	sleep(delay);
 	goflag = GOFLAG_RUN;
 	lock_mb();

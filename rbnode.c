@@ -75,7 +75,7 @@ void rbnode_free(void *ptr)
     }
 }
 //***********************************
-rbnode_t *rbnode_create(unsigned long key, void *value)
+rbnode_t *rbnode_create(long key, void *value)
 {
 	rbnode_t *node = (rbnode_t *)rb_alloc();
 	node->key = key;

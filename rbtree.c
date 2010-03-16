@@ -46,7 +46,7 @@ void rb_create(rbtree_t *tree, void *lock)
     write_unlock(lock);
 }
 //*******************************
-static rbnode_t *find_node(rbtree_t *tree, unsigned long key)
+static rbnode_t *find_node(rbtree_t *tree, long key)
 {
 	rbnode_t *node = rcu_dereference(tree->root);
 
@@ -61,7 +61,7 @@ static rbnode_t *find_node(rbtree_t *tree, unsigned long key)
 	return node;
 }
 //*******************************
-void *rb_find(rbtree_t *tree, unsigned long key)
+void *rb_find(rbtree_t *tree, long key)
 {
     void *value;
 
@@ -359,7 +359,7 @@ static void recolor(rbtree_t *tree, rbnode_t *node)
     }
 }
 //*******************************
-void rb_insert(rbtree_t *tree, unsigned long key, void *value)
+int rb_insert(rbtree_t *tree, long key, void *value)
 {
     rbnode_t *new_node;
 
@@ -378,6 +378,8 @@ void rb_insert(rbtree_t *tree, unsigned long key, void *value)
 #else
 		tree->root = new_node;
 #endif
+        write_unlock(tree->lock);
+        return 1;
 	} else {
 		rbnode_t *node = tree->root;
 		rbnode_t *prev = node;
@@ -385,7 +387,13 @@ void rb_insert(rbtree_t *tree, unsigned long key, void *value)
 		while (node != NULL)
 		{
 			prev = node;
-			if (key <= node->key) 
+            if (key == node->key)
+            {
+                rbnode_free(new_node);
+                write_unlock(tree->lock);
+                return 0;
+            }
+            else if (key <= node->key) 
 				node = node->left;
 			else 
 				node = node->right;
@@ -412,6 +420,8 @@ void rb_insert(rbtree_t *tree, unsigned long key, void *value)
 
     //printf("rb_insert write_unlock\n");
     write_unlock(tree->lock);
+
+    return 1;
 }
 //*******************************
 static rbnode_t *leftmost(rbnode_t *node)
@@ -421,6 +431,17 @@ static rbnode_t *leftmost(rbnode_t *node)
 	while (node->left != NULL)
 	{
 		node = node->left;
+	}
+	return node;
+}
+//*******************************
+static rbnode_t *rightmost(rbnode_t *node)
+{
+	if (node == NULL) return NULL;
+
+	while (node->right != NULL)
+	{
+		node = node->right;
 	}
 	return node;
 }
@@ -505,7 +526,7 @@ static void double_black(rbtree_t *tree, rbnode_t *r)
 	}
 }
 //*******************************
-void *rb_remove(rbtree_t *tree, unsigned long key)
+void *rb_remove(rbtree_t *tree, long key)
 {
 	rbnode_t *node = tree->root;
 	rbnode_t *prev = NULL;
@@ -710,6 +731,154 @@ void *rb_remove(rbtree_t *tree, unsigned long key)
     //printf("rb_remove write_unlock\n");
     write_unlock(tree->lock);
 	return value;
+}
+//***************************************
+void *rb_first(rbtree_t *tree, long *key)
+{
+    rbnode_t *node;
+    void *value = NULL;
+
+    read_lock(tree->lock);
+
+    node = leftmost(tree->root);
+    if (node != NULL)
+    {
+        *key = node->key;
+        value = node->value;
+    }
+
+    read_unlock(tree->lock);
+
+    return value;
+}
+//***************************************
+void *rb_last(rbtree_t *tree, long *key)
+{
+    rbnode_t *node;
+    void *value = NULL;
+
+    read_lock(tree->lock);
+
+    node = rightmost(tree->root);
+    if (node != NULL)
+    {
+        *key = node->key;
+        value = node->value;
+    }
+
+    read_unlock(tree->lock);
+
+    return value;
+}
+//***************************************
+void *rb_next(rbtree_t *tree, long prev_key, long *key)
+{
+    static __thread char buff[1000];
+
+    rbnode_t *bigger_node = NULL;
+    rbnode_t *node;
+    void *value;
+
+    buff[0] = 0;
+
+    read_lock(tree->lock);
+    
+    node = tree->root;
+
+    strcat(buff, "ROOT");
+
+    while (node != NULL)
+    {
+        if (node->key == prev_key)
+        {
+            strcat(buff, " =right");
+            node = node->right;
+        } 
+        else if (node->key > prev_key)
+        {
+            strcat(buff, " left");
+            bigger_node = node;
+            node = node->left;
+        }
+        else
+        {
+            strcat(buff, " right");
+            node = node->right;
+        }
+    }
+
+    if (bigger_node != NULL)
+    {
+        *key = bigger_node->key;
+        value = bigger_node->value;
+        value = buff;
+    }
+    else
+    {
+        *key = prev_key;
+        value = NULL;
+    }
+
+    read_unlock(tree->lock);
+
+    return value;
+}
+//***************************************
+void *rb_old_next(rbtree_t *tree, long prev_key, long *key)
+{
+    rbnode_t *node;
+    void *value;
+
+    read_lock(tree->lock);
+    
+    node = tree->root;
+
+    while (node != NULL)
+    {
+        if (node->key == prev_key)
+        {
+            node = leftmost(node->right);
+            assert(node != NULL);
+            break;
+        } 
+        else if (node->key > prev_key)
+        {
+            if (node->left != NULL)
+            {
+                if (node->left->key == prev_key && node->left->right == NULL) break;
+                node = node->left;
+            }
+            else
+            {
+                break;
+            }
+        }
+        else
+        {
+            node = node->right;
+        }
+    }
+
+    if (node != NULL)
+    {
+        *key = node->key;
+        value = node->value;
+    }
+    else
+    {
+        *key = prev_key;
+        value = NULL;
+    }
+
+    read_unlock(tree->lock);
+
+    return value;
+}
+//***************************************
+void *rb_prev(rbtree_t *tree, long next_key, long *key)
+{
+    assert(0);
+    return NULL;
 }
 //**************************************
 static void output_list(rbnode_t *node, int depth)
