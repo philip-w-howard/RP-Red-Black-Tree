@@ -1,5 +1,5 @@
 UCFLAGS = -Wall -pthread -g -O1 -I/u/pwh/local/include -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE -DRCU #-pg 
-CFLAGS = -Wall -pthread -g -O1 # -pg 
+CFLAGS = -Wall -pthread -g -O1 -I/u/pwh/local/include # -pg 
 
 all: rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock rb_urcu parse urcutest
 

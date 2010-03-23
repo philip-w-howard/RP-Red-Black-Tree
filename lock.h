@@ -1,7 +1,8 @@
 #ifndef __LOCK_H
 #define __LOCK_H
-#include <atomic_ops.h>
+//#include <atomic_ops.h>
 #include <pthread.h>
+#include "atomic_ops.h"
 
 #ifndef CACHE_LINE_SIZE
 #define CACHE_LINE_SIZE     128

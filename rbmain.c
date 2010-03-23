@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <sched.h>
 #include <errno.h>
+#include <assert.h>
 
 #include <stdio.h>
 #include <stdlib.h>

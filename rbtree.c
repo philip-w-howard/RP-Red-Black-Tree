@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 #ifdef URCU
 #include <urcu.h>
 #include <urcu-defer.h>

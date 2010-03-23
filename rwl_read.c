@@ -22,9 +22,9 @@ static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
 
 typedef struct
 {
-    volatile AO_t write_requests;
-    volatile AO_t write_completions;
-    volatile AO_t reader_count_and_flag;
+    AO_t write_requests;
+    AO_t write_completions;
+    AO_t reader_count_and_flag;
 } rwl_lock_t;
 
 //static volatile rwl_lock_t RWL_Lock;

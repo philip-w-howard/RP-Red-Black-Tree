@@ -23,9 +23,9 @@ static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
 
 typedef struct
 {
-    volatile AO_t write_requests;
-    volatile AO_t write_completions;
-    volatile AO_t reader_count_and_flag;
+    AO_t write_requests;
+    AO_t write_completions;
+    AO_t reader_count_and_flag;
 } rwl_lock_t;
 
 //static volatile rwl_lock_t RWL_Lock;
@@ -143,7 +143,7 @@ void write_lock(void *vlock)
     }
 
     //backoff_reset();
-    while (!AO_compare_and_swap(&lock->reader_count_and_flag, 0, RWL_ACTIVE_WRITER_FLAG))
+    while (!AO_compare_and_swap_full(&lock->reader_count_and_flag, 0, RWL_ACTIVE_WRITER_FLAG))
     {
         // wait
         Thread_Stats[STAT_WSPIN]++;
