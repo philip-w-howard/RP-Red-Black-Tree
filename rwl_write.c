@@ -3,6 +3,7 @@
 #include <assert.h>
 
 #include "lock.h"
+#include "atomic_ops.h"
 
 #define RWL_READ_INC    2
 #define RWL_ACTIVE_WRITER_FLAG   1
@@ -47,9 +48,9 @@ void lock_status(void *vlock, char *text)
 {
     rwl_lock_t *lock = (rwl_lock_t *)vlock;
 
-    int temp1 = AO_load(&(lock->write_requests));
-    int temp2 = AO_load(&(lock->write_completions));
-    int temp3 = AO_load(&(lock->write_completions));
+    AO_t temp1 = AO_load(&(lock->write_requests));
+    AO_t temp2 = AO_load(&(lock->write_completions));
+    AO_t temp3 = AO_load(&(lock->reader_count_and_flag));
     printf("%s %lX %X %X %X\n", text, (unsigned long)vlock, temp1, temp2, temp3);
 }
 //**********************************************
@@ -92,6 +93,7 @@ void read_lock(void *vlock)
             AO_load(&(lock->write_completions)))
     {
         // wait
+        //lock_status(vlock, "rspin1");
         Thread_Stats[STAT_RSPIN]++;
         //backoff_delay();
     }
@@ -104,19 +106,11 @@ void read_lock(void *vlock)
         //int temp = AO_load(&lock->reader_count_and_flag);
         //printf("read_lock lspin %X\n", temp);
         // wait
+        //lock_status(vlock, "rspin2");
         Thread_Stats[STAT_RSPIN]++;
         //backoff_delay();
     }
-    /*
-    Thread_Stats[STAT_READ]++;
-    AO_fetch_and_add_full(&(lock->reader_count_and_flag), RWL_READ_INC);
-    while (AO_load(&(lock->reader_count_and_flag)) & RWL_ACTIVE_WRITER_FLAG)
-    {
-        // wait
-        Thread_Stats[STAT_RSPIN]++;
-    }
-    //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) == 0);
-    */
+    //lock_status(vlock, "read locked");
 }
 //**********************************************
 void read_unlock(void *vlock)
@@ -131,13 +125,18 @@ void write_lock(void *vlock)
 {
     rwl_lock_t *lock = (rwl_lock_t *)vlock;
 
-    unsigned int previous_writers = AO_fetch_and_add_full(&lock->write_requests, 1);
+    unsigned int previous_writers;
+
+    //lock_status(vlock, "writer");
+
+    previous_writers = AO_fetch_and_add_full(&lock->write_requests, 1);
 
     Thread_Stats[STAT_WRITE]++;
     //backoff_reset();
     while (previous_writers != AO_load(&lock->write_completions))
     {
         // wait
+        //lock_status(vlock, "wspin1");
         Thread_Stats[STAT_WSPIN]++;
         //backoff_delay();
     }
@@ -146,9 +145,12 @@ void write_lock(void *vlock)
     while (!AO_compare_and_swap_full(&lock->reader_count_and_flag, 0, RWL_ACTIVE_WRITER_FLAG))
     {
         // wait
+        //lock_status(vlock, "wspin2");
         Thread_Stats[STAT_WSPIN]++;
         //backoff_delay();
     }
+
+    //lock_status(vlock, "writer locked");
 
     /*
     Thread_Stats[STAT_WRITE]++;
@@ -156,6 +158,7 @@ void write_lock(void *vlock)
                 0, RWL_ACTIVE_WRITER_FLAG))
     {
         // wait
+        //lock_status(vlock, "wspin3");
         Thread_Stats[STAT_WSPIN]++;
     }
     //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) != 0);

@@ -12,12 +12,15 @@
 
 #include "lock.h"
 #include "rbtree.h"
+#include "atomic_ops.h"
 
 /*
  * Test variables.
  */
 
-#ifndef NUM_CPUS
+#ifdef __sun__
+#define NUM_CPUS 64
+#else
 #define NUM_CPUS 16
 #endif
 
@@ -89,6 +92,7 @@ void ring_output(op_ring_buff_t *ring)
     }
     printf("\n");
 }
+
 unsigned long get_random(unsigned long *seed)
 {
     unsigned long a1 = *seed;
@@ -105,20 +109,27 @@ unsigned long get_random(unsigned long *seed)
     return a3;
 }
 
-unsigned long get_random_x(unsigned long *seed)
+unsigned long old_get_random(unsigned long *seed)
 {
     unsigned int val = *seed;
     val = (val*1103515245+12345)>>5;
     *seed = val;
     return val;
 }
+static volatile int Global = 0;
+
 void waste_time()
 {
     static unsigned long seed = 7876579;
-    void *foo;
-    foo = malloc((get_random(&seed) % 5000) + 5);
-    memset(foo, 1, 5);
-    free(foo);
+    int count;
+    int ii;
+
+    count = get_random(&seed) % 5000 + 5;
+    for (ii=0; ii<count; ii++)
+    {
+        Global++;
+        lock_mb();
+    }
 }
 void init_tree_data(int count, void *lock)
 {
@@ -148,8 +159,15 @@ void init_tree_data(int count, void *lock)
 void set_affinity(int cpu_number)
 {
     int result;
-    result = processor_bind(P_LWPID, P_MYID, cpu_number, NULL);
-    if (result != 0) printf("Affinity result %d %d %d\n", result, errno, cpu_number);
+    int core;
+
+    //core = (cpu_number*8 + cpu_number/8) % NUM_CPUS;
+    core = cpu_number % NUM_CPUS;
+    result = processor_bind(P_LWPID, P_MYID, core, NULL);
+    if (result != 0) 
+    {
+        printf("Affinity result %d %d %d %d\n", result, errno, cpu_number, core);
+    }
 }
 #else
 void set_affinity(int cpu_number)
@@ -170,6 +188,79 @@ void set_affinity(int cpu_number)
 }
 #endif
 
+void *locktest_thread(void *arg)
+{
+    static AO_t Read_Flag = 0;
+    static AO_t Write_Flag = 0;
+
+    AO_t flag;
+
+    thread_data_t *thread_data = (thread_data_t *)arg;
+    //int update_percent = thread_data->update_percent;
+    int thread_index = thread_data->thread_index;
+
+    unsigned long long n_read_blank = 0;
+    unsigned long long n_read_read = 0;
+    unsigned long long n_read_write = 0;
+    unsigned long long n_write_blank = 0;
+    unsigned long long n_write_read = 0;
+    unsigned long long n_write_write = 0;
+
+    set_affinity(thread_index);
+    lock_thread_init(thread_data->lock, thread_index);
+    lock_mb();
+
+	while (goflag == GOFLAG_INIT)
+		poll(NULL, 0, 10);
+
+    switch (thread_data->mode)
+    {
+        case MODE_TRAVERSE:
+        case MODE_READONLY:
+            while (goflag == GOFLAG_RUN) 
+            {
+                read_lock(thread_data->lock);
+                flag = AO_fetch_and_add_full(&Read_Flag, 1);
+                if (flag==0) 
+                    n_read_blank++;
+                else
+                    n_read_read++;
+                flag = AO_load(&Write_Flag);
+                if (flag) n_read_write++;
+
+                waste_time();
+
+                AO_fetch_and_add_full(&Read_Flag, -1);
+                read_unlock(thread_data->lock);
+            }
+            break;
+        case MODE_WRITE:
+            while (goflag == GOFLAG_RUN) 
+            {
+                write_lock(thread_data->lock);
+                flag = AO_fetch_and_add_full(&Write_Flag, 1);
+                if (flag==0) 
+                    n_write_blank++;
+                else
+                    n_write_write++;
+
+                flag = AO_load(&Read_Flag);
+                if (flag) n_write_read++;
+
+                waste_time();
+
+                AO_fetch_and_add_full(&Write_Flag, -1);
+                write_unlock(thread_data->lock);
+            }
+            break;
+    }
+
+    lock_thread_close(thread_data->lock, thread_index);
+
+    return get_thread_stats(n_read_blank, n_read_read, n_read_write, 
+            n_write_blank, n_write_read);
+}
+
 void *perftest_thread(void *arg)
 {
     thread_data_t *thread_data = (thread_data_t *)arg;
@@ -180,7 +271,6 @@ void *perftest_thread(void *arg)
     unsigned long random_seed = 1234;
     //unsigned long random_seed = random();
     void *value;
-    rbnode_t *node, *new_node;
     unsigned long int_value;
     long key=0;
     long new_key=0;
@@ -361,9 +451,11 @@ int main(int argc, char *argv[])
 	if (argc > 3) 
     {
         Tree_Size = atoi(argv[3]);
-        if (Tree_Scale < Tree_Size*100) Tree_Scale = Tree_Size * 100;
     }
-    if (argc > 4) Tree_Scale = atoi(argv[4]);
+    if (argc > 4) 
+        Tree_Scale = atoi(argv[4]);
+    else if (Tree_Scale < 100*Tree_Size) 
+        Tree_Scale = 100*Tree_Size;
 
 	if (nthreads < 1 || Tree_Scale < 10)
     {
@@ -381,6 +473,7 @@ int main(int argc, char *argv[])
     lock = lock_init();
     lock_thread_init(lock, 0);
     init_tree_data(Tree_Size, lock);
+
 
     if (mode == MODE_TRAVERSE || mode == MODE_TRAVERSEW)
     {
@@ -410,6 +503,8 @@ int main(int argc, char *argv[])
     {
 		pthread_create(&thread_data[ii].thread_id, NULL,
                 perftest_thread, &thread_data[ii]);
+		//pthread_create(&thread_data[ii].thread_id, NULL,
+        //        locktest_thread, &thread_data[ii]);
     }
 
 	lock_mb();

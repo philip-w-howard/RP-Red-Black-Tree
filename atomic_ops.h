@@ -5,16 +5,22 @@
 
 #include <sys/atomic.h>
 
-typedef uint64_t AO_t;
+typedef uint32_t AO_t;
 
 #define lock_mb() ({ asm volatile("membar #StoreStore"); } )
 
 #define AO_load(a) (*(a))
 #define AO_store(a,v) ({*(a) = (v);} )
-#define AO_fetch_and_add_full(a,v) uatomic_add_return(a,v)
+#define AO_fetch_and_add_full(a,v) \
+    ({AO_t ______tmp_pwh; \
+      membar_exit(); \
+     ______tmp_pwh = atomic_add_32_nv((a),(v));\
+     membar_enter();\
+     (______tmp_pwh - (v)); })
+
 #define AO_nop_full() {membar_consumer(); membar_producer();}
-#define AO_compare_and_swap_full(addr, old, _new) atomic_cas_64(addr, old, _new)
-#define lock_mb()        AO_nop_full()
+#define AO_compare_and_swap_full(addr, old, _new) \
+    (atomic_cas_32((addr), (old), (_new)) == (old))
 
 #elif defined(USE_URCU)
 

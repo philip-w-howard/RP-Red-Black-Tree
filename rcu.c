@@ -1,10 +1,10 @@
 //#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
-#include <atomic_ops.h>
 #include <memory.h>
 #include <pthread.h>
 
+#include "atomic_ops.h"
 #include "lock.h"
 #include "rbnode.h"
 
@@ -86,8 +86,8 @@ void read_lock(void *lock)
 #if defined(__i386__) || defined(__x86_64__)
     if ( (Thread_Epoch->epoch & 0x0001) == 0) lock_mb();
 #else
-#error("RCU need a memory barrier on this architecture");
-    //lock_mb();
+#warning("RCU need a memory barrier on this architecture");
+    lock_mb();
 #endif
 
 }

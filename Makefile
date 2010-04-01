@@ -1,9 +1,12 @@
-UCFLAGS = -Wall -pthread -g -O1 -I/u/pwh/local/include -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE -DRCU #-pg 
-CFLAGS = -Wall -O1 -I/u/pwh/local/include -pthread -g # -pg -pthreads -g
+UCFLAGS = -Wall -O1 -I/u/pwh/local/include -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE -DRCU #-pg 
+# UCFLAGS = -Wall -pthread -g -O1 -I/u/pwh/local/include -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE -DRCU #-pg 
+CFLAGS = -Wall -O1 -Wa,-xarch=v8plus -I/u/pwh/local/include # -pg -pthreads -g
 
 CC = gcc
 
-all: rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock parse # rb_urcu urcutest 
+all: rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock parse rcutest # rb_urcu urcutest 
+
+stuff: aotest
 
 clean:
 	rm *.o
@@ -44,6 +47,9 @@ rb_rcu: rbmain.c rbnode.c rbtree.c rcu.o
 	$(CC) -c rbnode.c $(CFLAGS) 
 	$(CC) -c rbtree.c $(CFLAGS) -DRCU 
 	$(CC) -o rb_rcu $(CFLAGS) rbmain.c -DRCU $(objects) rcu.o
+
+rcutest: rcutest.c rcu.o
+	$(CC) -o rcutest $(CFLAGS) rcutest.c -DRCU rcu.o
 
 rb_urcu: rbmain.c rbnode.c rbtree.c urcu.o
 	$(CC) -c rbnode.c $(CFLAGS) 
