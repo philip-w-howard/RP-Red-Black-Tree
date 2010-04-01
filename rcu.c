@@ -57,10 +57,7 @@ typedef struct
 } rcu_lock_t;
 
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE))) 
-        epoch_list_t My_Thread_Epoch;
-static __thread __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         epoch_list_t *Thread_Epoch;
-rcu_lock_t My_Lock;
 //**********************************************
 unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
         unsigned long long c, unsigned long long d, unsigned long long e)
@@ -126,7 +123,6 @@ void *lock_init()
     // is never accessed.
     lock = (rcu_lock_t *)malloc(sizeof(rcu_lock_t));
     //*********************************************
-    //lock = &My_Lock;
     memset(lock, 0xAB, sizeof(rcu_lock_t));
 
     lock->epoch_list = NULL;
@@ -150,7 +146,6 @@ void lock_thread_init(void *lock, int thread_id)
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
 
     Thread_Epoch = epoch;
-    //Thread_Epoch = &My_Thread_Epoch;
 
     // initialize per thread counters
     for (ii=1; ii<=NSTATS; ii++)

@@ -1,8 +1,9 @@
 #! /bin/bash
 rm -f redblack.log
 for SIZE in 64 65536; do
-    for ACCESS in READ WRITE; do
-        for ((ii=0; ii<16; ii++)); do
+    #for ACCESS in READ WRITE; do
+    for ACCESS in TRAVERSE TRAVERSEW; do
+        for ((ii=0; ii<1; ii++)); do
             for CPUS in `seq 1 16`; do
                 for TEST in nolock lock rwl_read rwl_write rcu ; do
                     ./rb_$TEST $CPUS $ACCESS $SIZE >> redblack.log

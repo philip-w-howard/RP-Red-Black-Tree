@@ -14,6 +14,8 @@
 #include "rbnode.h"
 #include "rbtree.h"
 #include "lock.h"
+#include "rcu.h"
+
 //**************************************
 //void check_for(rbnode_t *node, rbnode_t *new_node);
 //**************************************
@@ -734,6 +736,11 @@ void *rb_remove(rbtree_t *tree, long key)
 	return value;
 }
 //***************************************
+rbnode_t *rb_first_n(rbtree_t *tree)
+{
+    return leftmost(tree->root);
+}
+//***************************************
 void *rb_first(rbtree_t *tree, long *key)
 {
     rbnode_t *node;
@@ -770,6 +777,22 @@ void *rb_last(rbtree_t *tree, long *key)
     read_unlock(tree->lock);
 
     return value;
+}
+//***************************************
+rbnode_t *rb_next_n(rbnode_t *x)
+{
+    rbnode_t *xr,*y;
+
+    if ((xr = x->right) != NULL) return leftmost(xr);
+
+    y = x->parent;
+    while (y != NULL && x==y->right)
+    {
+        x = y;
+        y = y->parent;
+    }
+
+    return y;
 }
 //***************************************
 void *rb_next(rbtree_t *tree, long prev_key, long *key)

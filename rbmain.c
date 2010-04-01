@@ -74,7 +74,7 @@ static void ring_insert(op_ring_buff_t *ring, char op, long value)
     if (ring->head >= RING_SIZE) ring->head = 0;
     ring->count++;
 }
-static void ring_output(op_ring_buff_t *ring)
+void ring_output(op_ring_buff_t *ring)
 {
     int count = ring->count;
     int head  = ring->head;
@@ -91,6 +91,22 @@ static void ring_output(op_ring_buff_t *ring)
 }
 unsigned long get_random(unsigned long *seed)
 {
+    unsigned long a1 = *seed;
+    unsigned long a2, a3;
+
+    assert(a1 != 0);
+
+    a1 = a1 ^ (a1 << 21);
+    a2 = a1 ^ (a1 >> 17);
+    a3 = a2 ^ (a2 << 4);
+
+    *seed = a3;
+
+    return a3;
+}
+
+unsigned long get_random_x(unsigned long *seed)
+{
     unsigned int val = *seed;
     val = (val*1103515245+12345)>>5;
     *seed = val;
@@ -98,7 +114,7 @@ unsigned long get_random(unsigned long *seed)
 }
 void waste_time()
 {
-    static unsigned long seed;
+    static unsigned long seed = 7876579;
     void *foo;
     foo = malloc((get_random(&seed) % 5000) + 5);
     memset(foo, 1, 5);
@@ -107,7 +123,7 @@ void waste_time()
 void init_tree_data(int count, void *lock)
 {
     int ii;
-    unsigned long seed = 0;
+    unsigned long seed = random();
     unsigned long value;
 
     Values = (unsigned long *)malloc(count*sizeof(unsigned long));
@@ -124,6 +140,18 @@ void init_tree_data(int count, void *lock)
     }
 }
 
+#ifdef __sparc__
+#include <sys/types.h>
+#include <sys/processor.h>
+#include <sys/procset.h>
+
+void set_affinity(int cpu_number)
+{
+    int result;
+    result = processor_bind(P_LWPID, P_MYID, cpu_number, NULL);
+    if (result != 0) printf("Affinity result %d %d %d\n", result, errno, cpu_number);
+}
+#else
 void set_affinity(int cpu_number)
 {
     int result;
@@ -140,6 +168,7 @@ void set_affinity(int cpu_number)
         printf("Affinity result %d %d %d\n", cpu_number, result, errno);
     }
 }
+#endif
 
 void *perftest_thread(void *arg)
 {
@@ -151,6 +180,7 @@ void *perftest_thread(void *arg)
     unsigned long random_seed = 1234;
     //unsigned long random_seed = random();
     void *value;
+    rbnode_t *node, *new_node;
     unsigned long int_value;
     long key=0;
     long new_key=0;
@@ -177,6 +207,7 @@ void *perftest_thread(void *arg)
         case MODE_TRAVERSE:
             while (goflag == GOFLAG_RUN) 
             {
+#ifdef RCU
                 value = rb_first(&My_Tree, &new_key);
                 assert(new_key == -1);
 
@@ -198,7 +229,34 @@ void *perftest_thread(void *arg)
                             n_deletes, n_delete_fails);
                     }
                 }
+#else
+                read_lock(My_Tree.lock);
+                new_node = rb_first_n(&My_Tree);
+                assert(new_node->key == -1);
 
+                while (new_node != NULL)
+                {
+                    node = new_node;
+                    key = node->key;
+
+                    new_node = rb_next_n(node);
+                    if (new_node != NULL && node->key >= new_node->key)
+                    {
+                        printf("******************************************\n"
+                               "%s\nkey: %ld new: %ld\n"
+                               "******************************************\n", 
+                               (char *)node->value, node->key, new_node->key);
+                        //rb_output(&My_Tree);
+                        goflag = GOFLAG_STOP;
+                        read_unlock(My_Tree.lock);
+                        return get_thread_stats(n_reads, n_inserts, n_insert_fails, 
+                            n_deletes, n_delete_fails);
+                    }
+                }
+
+                read_unlock(My_Tree.lock);
+
+#endif
                 assert(key == Tree_Scale + 1);
                 n_reads++;
             }
@@ -303,6 +361,7 @@ int main(int argc, char *argv[])
 	if (argc > 3) 
     {
         Tree_Size = atoi(argv[3]);
+        if (Tree_Scale < Tree_Size*100) Tree_Scale = Tree_Size * 100;
     }
     if (argc > 4) Tree_Scale = atoi(argv[4]);
 
@@ -316,6 +375,9 @@ int main(int argc, char *argv[])
         tot_stats[ii] = 0;
     }
 
+    printf("%s_%d Test: threads %d mode %d %d\n", 
+            implementation_name(), Tree_Size, nthreads, mode, Tree_Scale);
+
     lock = lock_init();
     lock_thread_init(lock, 0);
     init_tree_data(Tree_Size, lock);
@@ -326,9 +388,6 @@ int main(int argc, char *argv[])
         rb_insert(&My_Tree, -1, &value);
         rb_insert(&My_Tree, Tree_Scale + 1, &value);
     }
-
-    printf("%s_%d Test: threads %d mode %d\n", 
-            implementation_name(), Tree_Size, nthreads, mode);
 
     for (ii=0; ii<MAX_THREADS; ii++)
     {
