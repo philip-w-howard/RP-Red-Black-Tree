@@ -273,7 +273,6 @@ void *perftest_thread(void *arg)
     void *value;
     unsigned long int_value;
     long key=0;
-    long new_key=0;
 
     unsigned long long n_reads = 0;
     unsigned long long n_inserts = 0;
@@ -298,6 +297,8 @@ void *perftest_thread(void *arg)
             while (goflag == GOFLAG_RUN) 
             {
 #ifdef RCU
+                long new_key=0;
+
                 value = rb_first(&My_Tree, &new_key);
                 assert(new_key == -1);
 
@@ -320,6 +321,8 @@ void *perftest_thread(void *arg)
                     }
                 }
 #else
+                rbnode_t *new_node, *node;
+
                 read_lock(My_Tree.lock);
                 new_node = rb_first_n(&My_Tree);
                 assert(new_node->key == -1);

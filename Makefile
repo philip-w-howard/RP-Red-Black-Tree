@@ -1,6 +1,7 @@
 UCFLAGS = -Wall -O1 -I/u/pwh/local/include -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE -DRCU #-pg 
 # UCFLAGS = -Wall -pthread -g -O1 -I/u/pwh/local/include -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE -DRCU #-pg 
-CFLAGS = -Wall -O1 -Wa,-xarch=v8plus -I/u/pwh/local/include # -pg -pthreads -g
+#CFLAGS = -Wall -O1 -Wa,-xarch=v8plus -I/u/pwh/local/include # -pg -pthreads -g
+CFLAGS = -Wall -O1 -pthread -g -I/u/pwh/local/include # -pg 
 
 CC = gcc
 
