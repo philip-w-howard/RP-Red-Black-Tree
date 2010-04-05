@@ -26,6 +26,7 @@ void rcu_free(void *lock, void (*func)(void *ptr), void *ptr);
 
 #define rcu_assign_pointer(p,v) ({(p) = (v);})
 #define rcu_dereference(p) (*(volatile typeof(p) *)&(p))
+#define rcu_free(l,f,a) ({ (f)( (a) ); })
 
 #endif
 #endif  // __RCU_H

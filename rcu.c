@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <memory.h>
 #include <pthread.h>
+#include <assert.h>
 
 #include "atomic_ops.h"
 #include "lock.h"
@@ -18,13 +19,15 @@ char *implementation_name()
 #define STAT_WRITE  7
 #define STAT_SPINS  8
 #define STAT_SYNC   9
-#define STAT_MIN_E  10
+#define STAT_RWSPINS  10
 #define STAT_FREE   11
 
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
     unsigned long long Thread_Stats[NSTATS+1];
 
 #define RCU_MAX_BLOCKS      20
+#define RWL_READ_INC        2
+#define RWL_ACTIVE_WRITER_FLAG 1
 
 typedef struct epoch_s
 {
@@ -52,6 +55,12 @@ typedef struct
         long long rcu_epoch;
     volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         block_list_t block;
+    __attribute__((__aligned__(CACHE_LINE_SIZE))) 
+        AO_t write_requests;
+    __attribute__((__aligned__(CACHE_LINE_SIZE))) 
+        AO_t write_completions;
+    __attribute__((__aligned__(CACHE_LINE_SIZE))) 
+        AO_t reader_count_and_flag;
     __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         pthread_mutex_t rcu_writer_lock;
 } rcu_lock_t;
@@ -99,6 +108,7 @@ void read_unlock(void *lock)
     Thread_Epoch->epoch = rcu_lock->rcu_epoch;
 }
 
+#ifdef RCU_USE_MUTEX
 void write_lock(void *lock)
 {
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
@@ -114,16 +124,114 @@ void write_unlock(void *lock)
     pthread_mutex_unlock(&rcu_lock->rcu_writer_lock);
 }
 
+void rw_lock(void *lock)
+{
+    write_lock(lock);
+}
+void rw_unlock(void *lock)
+{
+    write_unlock(lock);
+}
+#else
+//**********************************************
+void rw_lock(void *vlock)
+{
+    rcu_lock_t *lock = (rcu_lock_t *)vlock;
+
+    Thread_Stats[STAT_READ]++;
+
+    //lock_status(vlock, "read");
+    //backoff_reset();
+    while ( AO_load(&(lock->write_requests)) != 
+            AO_load(&(lock->write_completions)))
+    {
+        // wait
+        //lock_status(vlock, "rspin1");
+        Thread_Stats[STAT_RWSPINS]++;
+        //backoff_delay();
+    }
+
+    //backoff_reset();
+    AO_fetch_and_add_full(&(lock->reader_count_and_flag), RWL_READ_INC);
+    //lock_status(vlock, "read2");
+    while (AO_load(&(lock->reader_count_and_flag)) & RWL_ACTIVE_WRITER_FLAG)
+    {
+        //int temp = AO_load(&lock->reader_count_and_flag);
+        //printf("read_lock lspin %X\n", temp);
+        // wait
+        //lock_status(vlock, "rspin2");
+        Thread_Stats[STAT_RWSPINS]++;
+        //backoff_delay();
+    }
+    //lock_status(vlock, "read locked");
+}
+//**********************************************
+void rw_unlock(void *vlock)
+{
+    rcu_lock_t *lock = (rcu_lock_t *)vlock;
+
+    //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) == 0);
+    AO_fetch_and_add_full(&(lock->reader_count_and_flag), -RWL_READ_INC);
+}
+//**********************************************
+void write_lock(void *vlock)
+{
+    rcu_lock_t *lock = (rcu_lock_t *)vlock;
+
+    unsigned int previous_writers;
+
+    //lock_status(vlock, "writer");
+
+    previous_writers = AO_fetch_and_add_full(&lock->write_requests, 1);
+
+    Thread_Stats[STAT_WRITE]++;
+    //backoff_reset();
+    while (previous_writers != AO_load(&lock->write_completions))
+    {
+        // wait
+        //lock_status(vlock, "wspin1");
+        Thread_Stats[STAT_RWSPINS]++;
+        //backoff_delay();
+    }
+
+    //backoff_reset();
+    while (!AO_compare_and_swap_full(&lock->reader_count_and_flag, 0, RWL_ACTIVE_WRITER_FLAG))
+    {
+        // wait
+        //lock_status(vlock, "wspin2");
+        Thread_Stats[STAT_RWSPINS]++;
+        //backoff_delay();
+    }
+
+    //lock_status(vlock, "writer locked");
+
+    /*
+    Thread_Stats[STAT_WRITE]++;
+    while (!AO_compare_and_swap_full(&lock->reader_count_and_flag, 
+                0, RWL_ACTIVE_WRITER_FLAG))
+    {
+        // wait
+        //lock_status(vlock, "wspin3");
+        Thread_Stats[STAT_RWSPINS]++;
+    }
+    //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) != 0);
+    */
+}
+//**********************************************
+void write_unlock(void *vlock)
+{
+    rcu_lock_t *lock = (rcu_lock_t *)vlock;
+
+   //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) != 0);
+    AO_fetch_and_add_full(&lock->reader_count_and_flag, -1);
+    AO_fetch_and_add_full(&lock->write_completions, 1);
+}
+#endif
+
 void *lock_init()
 {
     rcu_lock_t *lock;
-    //*********************************************
-    // the following line, if uncommented, will make RCU run much slower
-    // at higher thread counts. This is true even thought the malloc'd memory
-    // is never accessed.
     lock = (rcu_lock_t *)malloc(sizeof(rcu_lock_t));
-    //*********************************************
-    memset(lock, 0xAB, sizeof(rcu_lock_t));
 
     lock->epoch_list = NULL;
     lock->rcu_epoch = 0;
@@ -131,21 +239,17 @@ void *lock_init()
     lock->block.head = 0;
     pthread_mutex_init(&lock->rcu_writer_lock, NULL);
 
+    AO_store(&lock->write_requests, 0);
+    AO_store(&lock->write_completions, 0);
+    AO_store(&lock->reader_count_and_flag, 0);
+
     return lock;
 }
 
 void lock_thread_init(void *lock, int thread_id)
 {
-    //*********************************************
-    // the following line, if uncommented, will make RCU run much slower
-    // at higher thread counts. This is true even thought the malloc'd memory
-    // is never accessed.
-    epoch_list_t *epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
-    //*********************************************
     int ii;
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
-
-    Thread_Epoch = epoch;
 
     // initialize per thread counters
     for (ii=1; ii<=NSTATS; ii++)
@@ -155,19 +259,11 @@ void lock_thread_init(void *lock, int thread_id)
     Thread_Stats[0] = NSTATS;
 
     // create a thread private epoch 
-    //epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
-    //if (epoch == NULL)
-    //{
-        //exit(-1);
-    //}
+    Thread_Epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
     
 	/* guard against multiple thread start-ups and grace periods */
 	pthread_mutex_lock(&rcu_lock->rcu_writer_lock);
 
-    // init the thread local epoch indirectly
-    //Thread_Epoch = &(epoch->epoch.epoch);   // Thread_Epoch points into the
-                                            // thread's epoch data structure
-                                            // just malloc'd
     Thread_Epoch->epoch = rcu_lock->rcu_epoch;  // Thread is in the current epoch
     Thread_Epoch->next = rcu_lock->epoch_list;
 

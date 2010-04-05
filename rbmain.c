@@ -296,7 +296,7 @@ void *perftest_thread(void *arg)
         case MODE_TRAVERSE:
             while (goflag == GOFLAG_RUN) 
             {
-#ifdef RCU
+#ifdef NLOGN
                 long new_key=0;
 
                 value = rb_first(&My_Tree, &new_key);
@@ -323,7 +323,7 @@ void *perftest_thread(void *arg)
 #else
                 rbnode_t *new_node, *node;
 
-                read_lock(My_Tree.lock);
+                rw_lock(My_Tree.lock);
                 new_node = rb_first_n(&My_Tree);
                 assert(new_node->key == -1);
 
@@ -341,13 +341,13 @@ void *perftest_thread(void *arg)
                                (char *)node->value, node->key, new_node->key);
                         //rb_output(&My_Tree);
                         goflag = GOFLAG_STOP;
-                        read_unlock(My_Tree.lock);
+                        rw_unlock(My_Tree.lock);
                         return get_thread_stats(n_reads, n_inserts, n_insert_fails, 
                             n_deletes, n_delete_fails);
                     }
                 }
 
-                read_unlock(My_Tree.lock);
+                rw_unlock(My_Tree.lock);
 
 #endif
                 assert(key == Tree_Scale + 1);
@@ -433,7 +433,7 @@ int main(int argc, char *argv[])
     unsigned long long tot_stats[MAX_STATS];
     thread_data_t thread_data[MAX_THREADS];
     int delay = 1;
-    int work_delay = 1;
+    int work_delay = 10;
     int mode = MODE_WRITE;
     void *lock;
 

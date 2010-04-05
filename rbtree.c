@@ -376,11 +376,7 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 	if (tree->root == NULL)
 	{
         new_node->color = BLACK;
-#ifdef RCU
 		rcu_assign_pointer(tree->root, new_node);
-#else
-		tree->root = new_node;
-#endif
         write_unlock(tree->lock);
         return 1;
 	} else {
@@ -405,17 +401,9 @@ int rb_insert(rbtree_t *tree, long key, void *value)
         new_node->color = RED;
         new_node->parent = prev;
         if (key <= prev->key) {
-#ifdef RCU
 			rcu_assign_pointer(prev->left, new_node);
-#else
-			prev->left = new_node;
-#endif
 		} else  {
-#ifdef RCU
 			rcu_assign_pointer(prev->right, new_node);
-#else
-			prev->right = new_node;
-#endif
 		}
 
         if (prev->color == RED) recolor(tree, new_node);
@@ -565,32 +553,16 @@ void *rb_remove(rbtree_t *tree, long key)
 
         if (swap == node->right)
         {
-#ifdef RCU
             rcu_assign_pointer(swap->left, node->left);
-#else
-            swap->left = node->left;
-#endif
             node->left->parent = swap;      // safe: checked above
 
             if (prev == NULL) {
-#ifdef RCU
                 rcu_assign_pointer(tree->root, swap);
-#else
-                tree->root = swap;
-#endif
 			} else {
                 if (prev->left == node) {
-#ifdef RCU
                     rcu_assign_pointer(prev->left, swap);
-#else
-                    prev->left = swap;
-#endif
                 } else {
-#ifdef RCU
                     rcu_assign_pointer(prev->right, swap);
-#else
-                    prev->right = swap;
-#endif
 				}
 			}
             swap->parent = prev;
@@ -679,25 +651,13 @@ void *rb_remove(rbtree_t *tree, long key)
         {
 		    if (is_left(node))
             {
-#ifdef RCU
 			    rcu_assign_pointer(prev->left, next);
-#else
-			    prev->left = next;
-#endif
             } else {
-#ifdef RCU
                 rcu_assign_pointer(prev->right, next);
-#else
-                prev->right = next;
-#endif
             }
             if (next != NULL) next->parent = prev;
         } else {
-#ifdef RCU
 		    rcu_assign_pointer(tree->root, next);
-#else
-		    tree->root = next;
-#endif
 		    if (next != NULL) next->parent = NULL;
 	    }
     }
@@ -724,12 +684,7 @@ void *rb_remove(rbtree_t *tree, long key)
     // save value, free node, return value
     value = node->value;
 
-    // Has a grace period already expired? Can we safely just free?
-#ifdef RCU
     rcu_free(tree->lock, rbnode_free, node);
-#else
-    rbnode_free(node);
-#endif
 
     //printf("rb_remove write_unlock\n");
     write_unlock(tree->lock);
