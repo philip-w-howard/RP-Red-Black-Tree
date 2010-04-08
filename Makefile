@@ -5,7 +5,7 @@ CFLAGS = -Wall -O1 -pthread -g -I/u/pwh/local/include # -pg
 
 CC = gcc
 
-all: rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock parse rcutest # rb_urcu urcutest 
+all: rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock parse rcutest rb_fg # rb_urcu urcutest 
 
 stuff: aotest
 
@@ -33,6 +33,11 @@ rcu.o: rcu.c
 
 urcu.o: urcu.c 
 	$(CC) -c urcu.c $(UCFLAGS) 
+
+rb_fg: rbmain.c rbnode_fg.c rbtree_fg.c rwl_write.o
+	$(CC) -c rbnode_fg.c $(CFLAGS) 
+	$(CC) -c rbtree_fg.c $(CFLAGS) 
+	$(CC) -o rb_fg $(CFLAGS) rbmain.c rbnode_fg.o rbtree_fg.o rwl_write.o 
 
 rb_rwl_write: rbmain.c rbnode.c rbtree.c rwl_write.o
 	$(CC) -c rbnode.c $(CFLAGS) 

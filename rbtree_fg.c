@@ -11,7 +11,7 @@
 #include <urcu-defer.h>
 #endif
 
-#include "rbnode.h"
+#include "rbnode_fg.h"
 #include "rbtree.h"
 #include "lock.h"
 #include "rcu.h"
