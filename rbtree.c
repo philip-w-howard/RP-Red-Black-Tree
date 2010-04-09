@@ -350,7 +350,10 @@ static void recolor(rbtree_t *tree, rbnode_t *node)
         // case 2
         w->color = BLACK;
         parent->color = BLACK;
+
+        // condition makes sure root stays black
         if (grandparent->parent != NULL) grandparent->color = RED;
+
         if (grandparent->parent != NULL && grandparent->parent->color == RED)
         {
             recolor(tree, grandparent);

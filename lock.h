@@ -18,6 +18,9 @@ void read_unlock(void *lock);
 void write_lock(void *lock);
 void write_unlock(void *lock);
 
+// optional routine
+void upgrade_lock(void *lock);
+
 #ifdef RCU
 void rw_lock(void *lock);
 void rw_unlock(void *lock);

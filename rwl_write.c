@@ -83,6 +83,7 @@ void read_lock(void *vlock)
 
     Thread_Stats[STAT_READ]++;
 
+    //lock_status(vlock, "pre read_lock");
     while ( AO_load(&(lock->write_requests)) != 
             AO_load(&(lock->write_completions)))
     {
@@ -99,6 +100,7 @@ void read_lock(void *vlock)
         Thread_Stats[STAT_RSPIN]++;
         //backoff_delay();
     }
+    //lock_status(vlock, "post read_lock");
 }
 //**********************************************
 void read_unlock(void *vlock)
@@ -107,7 +109,8 @@ void read_unlock(void *vlock)
 
     //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) == 0);
     AO_fetch_and_add_full(&(lock->reader_count_and_flag), -RWL_READ_INC);
-}
+    //lock_status(vlock, "post read_UNlock");
+ }
 //**********************************************
 void write_lock(void *vlock)
 {
@@ -115,6 +118,7 @@ void write_lock(void *vlock)
 
     unsigned int previous_writers;
 
+    //lock_status(vlock, "pre write_lock");
     previous_writers = AO_fetch_and_add_full(&lock->write_requests, 1);
 
     Thread_Stats[STAT_WRITE]++;
@@ -135,6 +139,7 @@ void write_lock(void *vlock)
     }
 
     //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) != 0);
+    //lock_status(vlock, "post write_lock");
 }
 //**********************************************
 void upgrade_lock(void *vlock)
@@ -143,6 +148,7 @@ void upgrade_lock(void *vlock)
 
     unsigned int previous_writers;
 
+    //lock_status(vlock, "pre upgrade_lock");
     previous_writers = AO_fetch_and_add_full(&lock->write_requests, 1);
 
     Thread_Stats[STAT_WRITE]++;
@@ -165,6 +171,7 @@ void upgrade_lock(void *vlock)
     }
 
     //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) != 0);
+    //lock_status(vlock, "post upgrade_lock");
 }
 //**********************************************
 void write_unlock(void *vlock)
@@ -174,4 +181,7 @@ void write_unlock(void *vlock)
    //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) != 0);
     AO_fetch_and_add_full(&lock->reader_count_and_flag, -RWL_ACTIVE_WRITER_FLAG);
     AO_fetch_and_add_full(&lock->write_completions, 1);
+    //lock_status(vlock, "post write UNlock");
+
+    assert( (AO_load(&lock->write_completions) <= AO_load(&lock->write_requests) ) );
 }

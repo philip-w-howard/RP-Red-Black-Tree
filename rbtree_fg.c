@@ -16,6 +16,8 @@
 #include "lock.h"
 #include "rcu.h"
 
+static int IMPLEMENTED = 0;
+
 //**************************************
 //void check_for(rbnode_t *node, rbnode_t *new_node);
 //**************************************
@@ -28,6 +30,7 @@ static char *toString(rbnode_t *node)
     return buff;
 }
 //*******************************
+// Requires node and parent to be locked
 static int is_left(rbnode_t *node)
 {
     if (node->parent->left == node)
@@ -49,14 +52,26 @@ void rb_create(rbtree_t *tree, void *lock)
 //*******************************
 static rbnode_t *find_node(rbtree_t *tree, long key)
 {
-	rbnode_t *node = rcu_dereference(tree->root);
+	rbnode_t *node;
+	rbnode_t *new_node;
+        
+    //printf("find_node read_lock\n");
+    read_lock(tree->lock);
+    node = rcu_dereference(tree->root);
+    read_lock(node->lock);
+    //printf("find_node read_unlock\n");
+    read_unlock(tree->lock);
 
 	while (node != NULL && key != node->key)
 	{
 		if (key < node->key) 
-            node = rcu_dereference(node->left);
+            new_node = rcu_dereference(node->left);
 		else 
-            node = rcu_dereference(node->right);
+            new_node = rcu_dereference(node->right);
+
+        if (new_node != NULL) read_lock(new_node->lock);
+        read_unlock(node->lock);
+        node = new_node;
 	}
 
 	return node;
@@ -66,19 +81,27 @@ void *rb_find(rbtree_t *tree, long key)
 {
     void *value;
 
-    read_lock(tree->lock);
+    //printf("rb_find read_lock\n");
+    //read_lock(tree->lock);
 	rbnode_t *node = find_node(tree, key);
 
     if (node != NULL) 
+    {
         value = node->value;
+        read_unlock(node->lock);
+    }
     else
+    {
         value = NULL;
+    }
 
-    read_unlock(tree->lock);
+    //printf("rb_find read_unlock\n");
+    //read_unlock(tree->lock);
 
     return value;
 }
 //*******************************
+// requires node and parent be locked
 static rbnode_t *sibling(rbnode_t *node)
 {
     if (node->parent->left == node)
@@ -87,14 +110,15 @@ static rbnode_t *sibling(rbnode_t *node)
         return node->parent->left;
 }
 //*******************************
+#ifdef RCU
 static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
                         rbnode_t **a, rbnode_t **b, rbnode_t **c)
 {
-#ifdef RCU
     rbnode_t *greatgrandparent = grandparent->parent;
     int left = 0;
+
+    assert(IMPLEMENTED);
     if (grandparent->parent != NULL) left = is_left(grandparent);
-    //printf("restructure %s\n", toString(node));
 
     tree->restructures++;
 
@@ -243,11 +267,25 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         *c = parent;
         rcu_free(tree->lock, rbnode_free, node);
    }
-#else
+}
+#else // non-RP restructure
+//*******************************
+// Requires grandparent, parent, and node to be write_locked
+// Locks are still held on return
+static void restructure(rbtree_t *tree, 
+                    rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
+                    rbnode_t **a, rbnode_t **b, rbnode_t **c)
+{
     rbnode_t *greatgrandparent = grandparent->parent;
     int left = 0;
-    if (grandparent->parent != NULL) left = is_left(grandparent);
-    //printf("restructure %s\n", toString(node));
+    if (greatgrandparent != NULL) 
+    {
+        // 'left' isn't needed until the end, but we need to compute it
+        // before the structure of the tree changes
+        printf("rest read lock %ld\n", greatgrandparent->key);
+        read_lock(greatgrandparent->lock);
+        left = is_left(grandparent);
+    }
 
 	tree->restructure_copies++;
     if (grandparent->left == parent && parent->left == node)
@@ -317,6 +355,9 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
 
     if (greatgrandparent != NULL)
     {
+        // DEADLOCK possible
+        printf("rest upgrade lock %ld\n", greatgrandparent->key);
+        upgrade_lock(greatgrandparent->lock);
         if (left) {
             greatgrandparent->left = *b;
         } else {
@@ -324,36 +365,104 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
 		}
 
         (*b)->parent = greatgrandparent;
+        printf("rest write UNlock %ld\n", greatgrandparent->key);
+        write_unlock(greatgrandparent->lock);
     } else {
         (*b)->parent = NULL;
+        // DEADLOCK possible
+        printf("rest write lock tree\n");
+        write_lock(tree->lock);
         tree->root = *b;
+        printf("rest write UNlock tree\n");
+        write_unlock(tree->lock);
     }
-#endif
 }
+#endif
 //*******************************
+// assumes node is write locked
 static void recolor(rbtree_t *tree, rbnode_t *node)
 {
-    rbnode_t *parent = node->parent;
-    rbnode_t *grandparent = parent->parent;
-    rbnode_t *w = sibling(parent);
+    rbnode_t *parent;
+    rbnode_t *grandparent;
+    rbnode_t *w;
     rbnode_t *a, *b, *c;
+
+    parent = node->parent;
+    printf("read lock %ld\n", parent->key);
+    read_lock(parent->lock);
+    grandparent = parent->parent;
+
+    // DEADLOCK possible
+    printf("write_lock %ld\n", grandparent->key);
+    write_lock(grandparent->lock);
+
+    // deadlock free because grandparent is write_locked
+    printf("upgrade lock %ld\n", parent->key);
+    upgrade_lock(parent->lock);
+
+    // parent and grandparent are locked
+    w = sibling(parent);
+
+    if (w != NULL) 
+    {
+        printf("read lock %ld\n", w->key);
+        read_lock(w->lock);
+    }
 
     if (w == NULL || w->color == BLACK)
     {
         // case 1
+        printf("restructure\n");
         restructure(tree, grandparent, parent, node, &a, &b, &c);
 
         a->color = RED;
         b->color = BLACK;
         c->color = RED;
+
+        printf("write UNlock %ld\n", node->key);
+        write_unlock(node->lock);
+        printf("write UNlock %ld\n", parent->key);
+        write_unlock(parent->lock);
+        printf("write UNlock %ld\n", grandparent->key);
+        write_unlock(grandparent->lock);
+        if (w != NULL) 
+        {
+            printf("read UNlock %ld\n", w->key);
+            read_unlock(w->lock);
+        }
     } else if ( w!=NULL && w->color == RED) {
         // case 2
+        printf("upgrade lock %ld\n", w->key);
+        upgrade_lock(w->lock);
         w->color = BLACK;
         parent->color = BLACK;
         if (grandparent->parent != NULL) grandparent->color = RED;
-        if (grandparent->parent != NULL && grandparent->parent->color == RED)
+        printf("write UNlock %ld\n", w->key);
+        write_unlock(w->lock);
+        printf("write UNlock %ld\n", node->key);
+        write_unlock(node->lock);
+        printf("write UNlock %ld\n", parent->key);
+        write_unlock(parent->lock);
+
+        if (grandparent->parent != NULL)
         {
-            recolor(tree, grandparent);
+            printf("read lock %ld\n", grandparent->parent->key);
+            read_lock(grandparent->parent->lock);
+            if (grandparent->parent->color == RED)
+            {
+                printf("read UNlock %ld\n", grandparent->parent->key);
+                read_unlock(grandparent->parent->lock);
+                printf("recolor %ld\n", grandparent->key);
+                recolor(tree, grandparent);
+            } else {
+                printf("read UNlock %ld\n", grandparent->parent->key);
+                read_unlock(grandparent->parent->lock);
+                printf("write UNlock %ld\n", grandparent->key);
+                write_unlock(grandparent->lock);
+            }
+        } else {
+            printf("write UNlock %ld\n", grandparent->key);
+            write_unlock(grandparent->lock);
         }
     }
 }
@@ -362,22 +471,28 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 {
     rbnode_t *new_node;
 
-    //printf("rb_insert write_lock\n");
-    write_lock(tree->lock);
-
     new_node = rbnode_create(key, value);
-
-    //check_for(tree->root, new_node);
 
 	if (tree->root == NULL)
 	{
+        printf("write lock tree\n");
+        write_lock(tree->lock);
         new_node->color = BLACK;
 		rcu_assign_pointer(tree->root, new_node);
+        printf("write UNlock tree\n");
         write_unlock(tree->lock);
         return 1;
 	} else {
-		rbnode_t *node = tree->root;
-		rbnode_t *prev = node;
+		rbnode_t *node;
+		rbnode_t *prev = NULL;
+
+        printf("read lock tree\n");
+        read_lock(tree->lock);
+		node = tree->root;
+        printf("read lock %ld\n", node->key);
+        read_lock(node->lock);
+        printf("read UNlock tree\n");
+        read_unlock(tree->lock);
 
 		while (node != NULL)
 		{
@@ -385,14 +500,30 @@ int rb_insert(rbtree_t *tree, long key, void *value)
             if (key == node->key)
             {
                 rbnode_free(new_node);
-                write_unlock(tree->lock);
+                printf("not found read unlock %ld\n", node->key);
+                read_unlock(node->lock);
                 return 0;
             }
             else if (key <= node->key) 
 				node = node->left;
 			else 
 				node = node->right;
+
+            if (node != NULL) 
+            {
+                printf("read lock %ld\n", node->key);
+                read_lock(node->lock);
+                printf("read UNlock %ld\n", prev->key);
+                read_unlock(prev->lock);
+            }
 		}
+
+        // loop is exited with prev being read_locked
+        
+        printf("upgrade lock %ld\n", prev->key);
+        upgrade_lock(prev->lock);
+        printf("write lock %ld\n", new_node->key);
+        write_lock(new_node->lock);
 
         new_node->color = RED;
         new_node->parent = prev;
@@ -402,11 +533,17 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 			rcu_assign_pointer(prev->right, new_node);
 		}
 
-        if (prev->color == RED) recolor(tree, new_node);
+        printf("write UNlock %ld\n", prev->key);
+        write_unlock(prev->lock);
+        if (prev->color == RED) 
+        {
+            printf("recolor %ld\n", new_node->key);
+            recolor(tree, new_node);
+        } else {
+            printf("write UNLOCK %ld\n", new_node->key);
+            write_unlock(new_node->lock);
+        }
 	}
-
-    //printf("rb_insert write_unlock\n");
-    write_unlock(tree->lock);
 
     return 1;
 }
@@ -434,6 +571,7 @@ static rbnode_t *rightmost(rbnode_t *node)
 }
 //*******************************
 static void double_black(rbtree_t *tree, rbnode_t *r);
+// requires x,y,r to be write locked
 static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t *r)
 {
     rbnode_t *z;
@@ -450,18 +588,31 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
         {
             // case 1
 			int x_color = x->color;
+            write_lock(z->lock);
             restructure(tree, x, y, z, &a, &b, &c);
             b->color = x_color;
             a->color = BLACK;
             c->color = BLACK;
             if (r != NULL) r->color = BLACK;
+            write_unlock(x->lock);
+            write_unlock(y->lock);
+            write_unlock(z->lock);
+            if (r != NULL) write_unlock(r->lock);
             return;
         } else {
             // case 2
-            if (r != NULL) r->color = BLACK;
+            if (r != NULL) 
+            {
+                write_unlock(r->lock);
+                r->color = BLACK;
+            }
             y->color = RED;
+            write_unlock(y->lock);
             if (x->color == RED)
+            {
                 x->color = BLACK;
+                write_unlock(x->lock);
+            }
             else
             {
                 x->color = BLACK_BLACK;
@@ -473,21 +624,32 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
     else // if (y->color == RED)
     {
         // case 3
+        // x is parent of y and is already locked
         if (is_left(y))
             z = y->left;
         else 
             z = y->right;
+
+        // should be deadlock free because we already have y locked
+        if (z != NULL) write_lock(z->lock);
         restructure(tree, x,y,z, &a, &b, &c);
 
 #ifdef RCU
 		// in RCU version, x always gets replaced. Figure out if it's c or a
+        write_unlock(x->lock);
 		if (c == z)
 			x = a;
 		else
 			x = c;
+
+        // DEADLOCK: x is a new node, but a reader may have already found it
+        write_lock(x->lock);
 #endif
+        write_unlock(z->lock);
 
 		y->color = BLACK;
+        write_unlock(y->lock);
+
         x->color = RED;
 
         if (x->left == r)
@@ -495,6 +657,7 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
         else
             y = x->left;
 
+        write_lock(y->lock);
         double_black_node(tree, x, y, r);
     }
 }
@@ -522,17 +685,17 @@ void *rb_remove(rbtree_t *tree, long key)
 	void *value = NULL;
     int temp_color;
 
-    write_lock(tree->lock);
-
+    //printf("rb_remove write_lock\n");
 	node = find_node(tree, key);
 
     // not found
 	if (node == NULL) 
     {
         //printf("rb_remove not found write_unlock\n");
-        write_unlock(tree->lock);
         return NULL;
     }
+
+    assert(IMPLEMENTED);
 
     prev = node->parent;
 
@@ -566,6 +729,8 @@ void *rb_remove(rbtree_t *tree, long key)
             next = swap->right;
         } else {
 #ifdef RCU
+            assert(IMPLEMENTED);
+
             // exchange children of swap and node
 			rbnode_t *new_node = rbnode_copy(swap);
             //check_for(tree->root, new_node);
@@ -622,6 +787,7 @@ void *rb_remove(rbtree_t *tree, long key)
                 tree->root = swap;
                 swap->parent = NULL;
             } else {
+                assert(IMPLEMENTED);
                 if (is_left(node)) {
                     node->parent->left = swap;
                 } else {
@@ -644,6 +810,7 @@ void *rb_remove(rbtree_t *tree, long key)
 
         if (prev != NULL)
         {
+            // prev should already be write locked
 		    if (is_left(node))
             {
 			    rcu_assign_pointer(prev->left, next);
@@ -682,7 +849,6 @@ void *rb_remove(rbtree_t *tree, long key)
     rcu_free(tree->lock, rbnode_free, node);
 
     //printf("rb_remove write_unlock\n");
-    write_unlock(tree->lock);
 	return value;
 }
 //***************************************
@@ -696,6 +862,7 @@ void *rb_first(rbtree_t *tree, long *key)
     rbnode_t *node;
     void *value = NULL;
 
+    //printf("rb_first ************************* read_lock\n");
     read_lock(tree->lock);
 
     node = leftmost(tree->root);
@@ -705,6 +872,7 @@ void *rb_first(rbtree_t *tree, long *key)
         value = node->value;
     }
 
+    //printf("rb_first ************************* read_unlock\n");
     read_unlock(tree->lock);
 
     return value;
@@ -715,6 +883,7 @@ void *rb_last(rbtree_t *tree, long *key)
     rbnode_t *node;
     void *value = NULL;
 
+    //printf("rb_last ************************* read_lock\n");
     read_lock(tree->lock);
 
     node = rightmost(tree->root);
@@ -755,6 +924,7 @@ void *rb_next(rbtree_t *tree, long prev_key, long *key)
 
     buff[0] = 0;
 
+    //printf("rb_next ************************* read_lock\n");
     read_lock(tree->lock);
     
     node = tree->root;
@@ -793,6 +963,7 @@ void *rb_next(rbtree_t *tree, long prev_key, long *key)
         value = NULL;
     }
 
+    //printf("rb_next ************************* read_unlock\n");
     read_unlock(tree->lock);
 
     return value;
@@ -803,6 +974,7 @@ void *rb_old_next(rbtree_t *tree, long prev_key, long *key)
     rbnode_t *node;
     void *value;
 
+    assert(0);
     read_lock(tree->lock);
     
     node = tree->root;
