@@ -38,9 +38,7 @@ typedef struct
 #define MODE_READONLY       0
 #define MODE_WRITE          1
 #define MODE_TRAVERSE       2
-#define MODE_TRAVERSEW      3
-#define MODE_TRAVERSEN      4
-#define MODE_TRAVERSENW     5
+#define MODE_TRAVERSEN      3
 
 typedef struct
 {
@@ -61,15 +59,16 @@ avl_node_t My_Tree;
 
 typedef struct
 {
-    int threads;
     int size;
     int scale;
     int delay;
     int mode;
     int cpus;
+    int readers;
+    int writers;
 } param_t;
 
-param_t Params = {1, 64, 10000, 1, MODE_READONLY, NUM_CPUS};
+param_t Params = {64, 10000, 1, MODE_READONLY, NUM_CPUS, 1, 0};
 
 #define RING_SIZE 50
 
@@ -433,7 +432,7 @@ void usage(int argc, char *argv[], char *bad_arg)
     if (bad_arg != NULL) fprintf(stderr, "Invalid param %s\n", bad_arg);
 
 	fprintf(stderr, 
-       "Usage: %s [c:<CPUS>] [n:<threads>] [m:<READ | WRITE | TRAVERSE | TRAVERSEW | TRAVERSEN | TRAVERSENW>] [s:<tree size>] [S:<tree scale>]\n",
+       "Usage: %s [c:<CPUS>] [m:<READ | TRAVERSE | TRAVERSEN>] [s:<tree size>] [S:<tree scale>] [w:<writers>] [r:<readers>]\n",
 
        argv[0]);
 	exit(-1);
@@ -464,29 +463,21 @@ void parse_args(int argc, char *argv[])
                 Params.delay = atoi(value);
                 if (Params.delay < 1) usage(argc, argv, argv[ii]);
                 break;
-            case 'n':
-                Params.threads = atoi(value);
-                if (Params.threads < 1 || Params.threads > MAX_THREADS)
-                {
-                    usage(argc, argv, argv[ii]);
-                }
-                break;
             case 'm':
                 if (strcmp(value, "READ")==0)
                     Params.mode = MODE_READONLY;
-                else if (strcmp(value, "WRITE") == 0)
-                    Params.mode = MODE_WRITE;
                 else if (strcmp(value, "TRAVERSE") == 0)
                     Params.mode = MODE_TRAVERSE;
-                else if (strcmp(value, "TRAVERSEW") == 0)
-                    Params.mode = MODE_TRAVERSEW;
                 else if (strcmp(value, "TRAVERSEN") == 0)
                     Params.mode = MODE_TRAVERSEN;
-                else if (strcmp(value, "TRAVERSENW") == 0)
-                    Params.mode = MODE_TRAVERSENW;
                 else
                     usage(argc, argv, argv[ii]);
                 break;
+            case 'r':
+                Params.readers = atoi(value);
+                if (Params.readers < 0) usage(argc, argv, argv[ii]);
+                break;
+
             case 's':
                 Params.size = atoi(value);
                 if (Params.size < 1) usage(argc, argv, argv[ii]);
@@ -495,7 +486,11 @@ void parse_args(int argc, char *argv[])
                 break;
             case 'S':
                 Params.scale = atoi(value);
-                if (Params.scale < 1) usage(argc, argv, argv[ii]);
+                if (Params.scale < 10) usage(argc, argv, argv[ii]);
+                break;
+            case 'w':
+                Params.writers = atoi(value);
+                if (Params.writers < 0) usage(argc, argv, argv[ii]);
                 break;
             default:
                 usage(argc, argv, argv[ii]);
@@ -515,26 +510,21 @@ int main(int argc, char *argv[])
 
     parse_args(argc, argv);
 
-	if (Params.threads < 1 || Params.scale < 10)
-    {
-        usage(argc, argv, NULL);
-	}
-
     for (ii=0; ii<MAX_STATS; ii++)
     {
         tot_stats[ii] = 0;
     }
 
-    printf("%s_%d_%d Test: threads %d mode %d %d\n", 
-            implementation_name(), Params.size, Params.mode, Params.threads, Params.mode, Params.scale);
+    printf("%s_%d_%d Test: readers %d writers %d mode %d %d\n", 
+            implementation_name(), Params.size, Params.mode, 
+            Params.readers, Params.writers, Params.mode, Params.scale);
 
     lock = lock_init();
     lock_thread_init(lock, 0);
     init_tree_data(Params.size, lock);
 
 
-    if (Params.mode == MODE_TRAVERSE || Params.mode == MODE_TRAVERSEW || 
-        Params.mode == MODE_TRAVERSEN || Params.mode == MODE_TRAVERSENW )
+    if (Params.mode == MODE_TRAVERSE || Params.mode == MODE_TRAVERSEN)
     {
         unsigned long value;
         avl_insert(&My_Tree, -1, &value);
@@ -544,26 +534,16 @@ int main(int argc, char *argv[])
     for (ii=0; ii<MAX_THREADS; ii++)
     {
         thread_data[ii].thread_index = ii;
-        //thread_data[ii].update_percent = update_percent;
-        if (Params.mode == MODE_WRITE && ii>0)
-            thread_data[ii].mode = MODE_READONLY;
-        else if (Params.mode == MODE_TRAVERSEW && ii==0)
-        {
+
+        if (ii < Params.writers)
             thread_data[ii].mode = MODE_WRITE;
-            Params.mode = MODE_TRAVERSE;
-        }
-        else if (Params.mode == MODE_TRAVERSENW && ii==0)
-        {
-            thread_data[ii].mode = MODE_WRITE;
-            Params.mode = MODE_TRAVERSEN;
-        }
         else
             thread_data[ii].mode = Params.mode;
 
         thread_data[ii].lock = lock;
     }
 
-	for (ii = 0; ii < Params.threads; ii++)
+	for (ii = 0; ii < Params.readers+Params.writers; ii++)
     {
 		pthread_create(&thread_data[ii].thread_id, NULL,
                 perftest_thread, &thread_data[ii]);
@@ -594,7 +574,7 @@ int main(int argc, char *argv[])
 	goflag = GOFLAG_STOP;
 	lock_mb();
 
-	for (ii=0; ii<Params.threads; ii++)
+	for (ii = 0; ii < Params.readers+Params.writers; ii++)
     {
         pthread_join(thread_data[ii].thread_id, &vstats);
         stats = (unsigned long long *)vstats;

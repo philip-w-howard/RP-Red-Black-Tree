@@ -14,7 +14,7 @@ typedef struct avl_node_s
     volatile struct avl_node_s *parent;
     volatile struct avl_node_s *left;
     volatile struct avl_node_s *right;
-    pthread_mutex_t *lock;
+    void *lock;
 } avl_node_t;
 
 extern avl_node_t *Retry;
@@ -33,18 +33,5 @@ void *avl_next(avl_node_t *tree, long prev_key, long *key);
 void avl_output_list(avl_node_t *tree);
 void avl_output(avl_node_t *tree);
 int avl_valid(avl_node_t *tree);
-
-/*
-avl_node_t *create();
-
-// get a value
-void *get(avl_node_t *tree, long key);
-
-// return previous value
-void *put(avl_node_t *tree, long key, void * value);
-
-// return previous value
-void *remove(avl_node_t *tree, long key);
-*/
 
 #endif

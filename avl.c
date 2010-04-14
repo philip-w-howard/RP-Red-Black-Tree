@@ -1,9 +1,9 @@
-#include <pthread.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <limits.h>
 
 #include "avl.h"
+#include "lock.h"
 
 #define IMPLEMENTED 1
 #define MAX(a,b) ( (a) > (b) ? (a) : (b) )
@@ -119,9 +119,7 @@ avl_node_t *create(long key, int height, void *value,
     new_node->parent = parent;
     new_node->left = left;
     new_node->right = right;
-    new_node->lock = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t));
-    assert(new_node->lock != NULL);
-    pthread_mutex_init(new_node->lock, NULL);
+    new_node->lock = lock_init();
 
     return new_node;
 }
@@ -134,9 +132,9 @@ static avl_node_t *childSibling(avl_node_t *node, char dir)
 // node should be locked
 static void setChild(avl_node_t *node, char dir, avl_node_t *new_node) {
             if (dir == LEFT) {
-                node->left = node;
+                node->left = new_node;
             } else {
-                node->right = node;
+                node->right = new_node;
             }
         }
 
@@ -164,9 +162,9 @@ static void waitUntilChangeCompleted(avl_node_t *node, version_t ovl) {
             */
 
             // spin and yield failed, use the nuclear option
-            pthread_mutex_lock(node->lock);
+            write_lock(node->lock);
             // we can't have gotten the lock unless the shrink was over
-            pthread_mutex_unlock(node->lock);
+            write_unlock(node->lock);
 
             assert(node->changeOVL != ovl);
         }
@@ -490,14 +488,14 @@ static int remove_value(avl_node_t *tree, long key, void * value) {
 
 
 static int attemptInsertIntoEmpty(avl_node_t *tree, long key, void * vOpt) {
-    pthread_mutex_lock(tree->lock);
+    write_lock(tree->lock);
             if (tree->right == NULL) {
                 tree->right = create(key, 1, vOpt, 0, tree, NULL, NULL);
                 tree->height = 2;
-                pthread_mutex_unlock(tree->lock);
+                write_unlock(tree->lock);
                 return 1;
             } else {
-                pthread_mutex_unlock(tree->lock);
+                write_unlock(tree->lock);
                 return 0;
             }
     }
@@ -526,6 +524,7 @@ static void * attemptUpdate(avl_node_t *tree,
         int cmp;
         char dirToC;
 
+        assert (parent != node);
         assert (nodeOVL != UnlinkedOVL);
 
         cmp = key - node->key; 
@@ -553,13 +552,13 @@ static void * attemptUpdate(avl_node_t *tree,
                     // Update will be an insert.
                     int success;
                     avl_node_t *damaged;
-                    pthread_mutex_lock(node->lock);
+                    write_lock(node->lock);
                     {
                         // Validate that we haven't been affected by past
                         // rotations.  We've got the lock on node, so no future
                         // rotations can mess with us.
                         if (hasShrunkOrUnlinked(nodeOVL, node->changeOVL)) {
-                            pthread_mutex_unlock(node->lock);
+                            write_unlock(node->lock);
                             return SpecialRetry;
                         }
 
@@ -573,7 +572,7 @@ static void * attemptUpdate(avl_node_t *tree,
                             // We're valid.  Does the user still want to
                             // perform the operation?
                             if (!shouldUpdate(func, NULL, expected)) {
-                                pthread_mutex_unlock(node->lock);
+                                write_unlock(node->lock);
                                 return NULL;
                             }
 
@@ -587,7 +586,7 @@ static void * attemptUpdate(avl_node_t *tree,
                             damaged = fixHeight_nl(node);
                         }
                     }
-                    pthread_mutex_unlock(node->lock);
+                    write_unlock(node->lock);
                     if (success) {
                         fixHeightAndRebalance(damaged);
                         return NULL;
@@ -680,64 +679,64 @@ static void * update(avl_node_t *tree, long key, int func, void *expected, void 
         if (newValue == NULL && (node->left == NULL || node->right == NULL)) {
             // potential unlink, get ready by locking the parent
             avl_node_t *damaged;
-            pthread_mutex_lock(parent->lock);
+            write_lock(parent->lock);
             {
                 if (isUnlinked(parent->changeOVL) || node->parent != parent) {
-                    pthread_mutex_unlock(parent->lock);
+                    write_unlock(parent->lock);
                     return SpecialRetry;
                 }
 
-                pthread_mutex_lock(node->lock);
+                write_lock(node->lock);
                 {
                     prev = (void *)node->value;
                     if (prev == NULL || !shouldUpdate(func, prev, expected)) {
                         // nothing to do
-                        pthread_mutex_unlock(node->lock);
-                        pthread_mutex_unlock(parent->lock);
+                        write_unlock(node->lock);
+                        write_unlock(parent->lock);
                         return prev;
                     }
                     if (!attemptUnlink_nl(parent, node)) {
-                        pthread_mutex_unlock(node->lock);
-                        pthread_mutex_unlock(parent->lock);
+                        write_unlock(node->lock);
+                        write_unlock(parent->lock);
                         return SpecialRetry;
                     }
                 }
-                pthread_mutex_unlock(node->lock);
+                write_unlock(node->lock);
 
                 // try to fix the parent while we've still got the lock
                 damaged = fixHeight_nl(parent);
             }
-            pthread_mutex_unlock(parent->lock);
+            write_unlock(parent->lock);
             fixHeightAndRebalance(damaged);
             return prev;
         } else {
             // potential update (including remove-without-unlink)
-            pthread_mutex_lock(node->lock);
+            write_lock(node->lock);
             {
                 // regular version changes don't bother us
                 if (isUnlinked(node->changeOVL)) {
-                    pthread_mutex_unlock(node->lock);
+                    write_unlock(node->lock);
                     return SpecialRetry;
                 }
 
                 prev = (void *)node->value;
                 if (!shouldUpdate(func, prev, expected)) {
-                    pthread_mutex_unlock(node->lock);
+                    write_unlock(node->lock);
                     return prev;
                 }
 
                 // retry if we now detect that unlink is possible
                 if (newValue == NULL && (node->left == NULL || node->right == NULL)) {
-                    pthread_mutex_unlock(node->lock);
+                    write_unlock(node->lock);
                     return SpecialRetry;
                 }
 
                 // update in-place
                 node->value = newValue;
-                pthread_mutex_unlock(node->lock);
+                write_unlock(node->lock);
                 return prev;
             }
-            pthread_mutex_unlock(node->lock);
+            write_unlock(node->lock);
         }
     }
 
@@ -950,25 +949,29 @@ static void fixHeightAndRebalance(avl_node_t *node) {
             }
 
             if (condition != UnlinkRequired && condition != RebalanceRequired) {
-                pthread_mutex_lock(node->lock);
+                avl_node_t *new_node;
+                write_lock(node->lock);
                 {
-                    node = fixHeight_nl(node);
+                    new_node = fixHeight_nl(node);
                 }
-                pthread_mutex_unlock(node->lock);
+                write_unlock(node->lock);
+                node = new_node;
             } else {
                 avl_node_t *nParent = (avl_node_t *)node->parent;
-                pthread_mutex_lock(nParent->lock);
+                write_lock(nParent->lock);
                 {
                     if (!isUnlinked(nParent->changeOVL) && node->parent == nParent) {
-                        pthread_mutex_lock(node->lock);
+                        avl_node_t *new_node;
+                        write_lock(node->lock);
                         {
-                            node = rebalance_nl(nParent, node);
+                            new_node = rebalance_nl(nParent, node);
                         }
-                        pthread_mutex_unlock(node->lock);
+                        write_unlock(node->lock);
+                        node = new_node;
                     }
                     // else RETRY
                 }
-                pthread_mutex_unlock(nParent->lock);
+                write_unlock(nParent->lock);
             }
         }
     }
@@ -1046,11 +1049,11 @@ static avl_node_t *rebalanceToRight_nl(avl_node_t *nParent, avl_node_t *n,
 
         // L is too large, we will rotate-right.  If L.R is taller
         // than L.L, then we will first rotate-left L.
-        pthread_mutex_lock(nL->lock);
+        write_lock(nL->lock);
         {
             int hL = nL->height;
             if (hL - hR0 <= 1) {
-                pthread_mutex_unlock(nL->lock);
+                write_unlock(nL->lock);
                 return n; // retry
             } else {
                 avl_node_t *nLR = (avl_node_t *)nL->right;
@@ -1059,18 +1062,18 @@ static avl_node_t *rebalanceToRight_nl(avl_node_t *nParent, avl_node_t *n,
                 if (hLL0 >= hLR0) {
                     // rotate right based on our snapshot of hLR
                     result = rotateRight_nl(nParent, n, nL, hR0, hLL0, nLR, hLR0);
-                    pthread_mutex_unlock(nL->lock);
+                    write_unlock(nL->lock);
                     return result;
                 } else {
-                    pthread_mutex_lock(nLR->lock);
+                    write_lock(nLR->lock);
                     {
                         // If our hLR snapshot is incorrect then we might
                         // actually need to do a single rotate-right on n.
                         int hLR = nLR->height;
                         if (hLL0 >= hLR) {
                             result = rotateRight_nl(nParent, n, nL, hR0, hLL0, nLR, hLR);
-                            pthread_mutex_unlock(nLR->lock);
-                            pthread_mutex_unlock(nL->lock);
+                            write_unlock(nLR->lock);
+                            write_unlock(nL->lock);
                             return result;
                         } else {
                             // If the underlying left balance would not be
@@ -1088,21 +1091,21 @@ static avl_node_t *rebalanceToRight_nl(avl_node_t *nParent, avl_node_t *n,
                                 // nParent.child.left won't be damaged after a double rotation
                                 result = rotateRightOverLeft_nl(nParent, n, nL, 
                                                            hR0, hLL0, nLR, hLRL);
-                                pthread_mutex_unlock(nLR->lock);
-                                pthread_mutex_unlock(nL->lock);
+                                write_unlock(nLR->lock);
+                                write_unlock(nL->lock);
                                 return result;
                             }
                         }
                     }
-                    pthread_mutex_unlock(nLR->lock);
+                    write_unlock(nLR->lock);
                     // focus on nL, if necessary n will be balanced later
                     result = rebalanceToLeft_nl(n, nL, nLR, hLL0);
-                    pthread_mutex_unlock(nL->lock);
+                    write_unlock(nL->lock);
                     return result;
                 }
             }
         }
-        pthread_mutex_unlock(nL->lock);
+        write_unlock(nL->lock);
     }
 
 static avl_node_t *rebalanceToLeft_nl(avl_node_t *nParent,
@@ -1111,11 +1114,11 @@ static avl_node_t *rebalanceToLeft_nl(avl_node_t *nParent,
                                       int hL0) {
         avl_node_t *result;
 
-        pthread_mutex_lock(nR->lock);
+        write_lock(nR->lock);
         {
             int hR = nR->height;
             if (hL0 - hR >= -1) {
-                pthread_mutex_unlock(nR->lock);
+                write_unlock(nR->lock);
                 return n; // retry
             } else {
                 avl_node_t *nRL = (avl_node_t *)nR->left;
@@ -1123,16 +1126,16 @@ static avl_node_t *rebalanceToLeft_nl(avl_node_t *nParent,
                 int hRR0 = height((avl_node_t *)nR->right);
                 if (hRR0 >= hRL0) {
                     result = rotateLeft_nl(nParent, n, hL0, nR, nRL, hRL0, hRR0);
-                    pthread_mutex_unlock(nR->lock);
+                    write_unlock(nR->lock);
                     return result;
                 } else {
-                    pthread_mutex_lock(nRL->lock);
+                    write_lock(nRL->lock);
                     {
                         int hRL = nRL->height;
                         if (hRR0 >= hRL) {
                             result = rotateLeft_nl(nParent, n, hL0, nR, nRL, hRL, hRR0);
-                            pthread_mutex_unlock(nRL->lock);
-                            pthread_mutex_unlock(nR->lock);
+                            write_unlock(nRL->lock);
+                            write_unlock(nR->lock);
                             return result;
                         } else {
                             int hRLR = height((avl_node_t *)nRL->right);
@@ -1140,20 +1143,20 @@ static avl_node_t *rebalanceToLeft_nl(avl_node_t *nParent,
                             if (b >= -1 && b <= 1) {
                                 result = rotateLeftOverRight_nl(nParent, n, hL0, 
                                                         nR, nRL, hRR0, hRLR);
-                                pthread_mutex_unlock(nRL->lock);
-                                pthread_mutex_unlock(nR->lock);
+                                write_unlock(nRL->lock);
+                                write_unlock(nR->lock);
                                 return result;
                             }
                         }
                     }
-                    pthread_mutex_unlock(nRL->lock);
+                    write_unlock(nRL->lock);
                     result = rebalanceToRight_nl(n, nR, nRL, hRR0);
-                    pthread_mutex_unlock(nR->lock);
+                    write_unlock(nR->lock);
                     return result;
                 }
             }
         }
-        pthread_mutex_unlock(nR->lock);
+        write_unlock(nR->lock);
     }
 
 static avl_node_t *rotateRight_nl(avl_node_t *nParent,
@@ -1441,13 +1444,12 @@ void avl_create(avl_node_t *tree, void *lock)
     tree->parent = NULL;
     tree->left = NULL;
     tree->right = NULL;
-    tree->lock = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t));
-    assert(tree->lock != NULL);
-    pthread_mutex_init(tree->lock, NULL);
+    tree->lock = lock_init();
 }
 //***********************************************
 void *avl_find(avl_node_t *tree, long key)
 {
+    return get(tree, key);
 }
 //***********************************************
 int avl_insert(avl_node_t *tree, long key, void *value)
@@ -1456,9 +1458,9 @@ int avl_insert(avl_node_t *tree, long key, void *value)
     
     old_value = put(tree, key, value);
 
-    if (old_value == NULL)
-        return 0;
-    else
+    //if (old_value == NULL)
+        //return 0;
+    //else
         return 1;
 }
 //***********************************************
