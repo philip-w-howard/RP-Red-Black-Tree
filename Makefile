@@ -34,6 +34,10 @@ rcu.o: rcu.c
 urcu.o: urcu.c 
 	$(CC) -c urcu.c $(UCFLAGS) 
 
+avl: rbmain.c avl.c avl.h 
+	$(CC) -c avl.c $(CFLAGS) 
+	$(CC) -o avl $(CFLAGS) avlmain.c avl.o 
+
 rb_fg: rbmain.c rbnode_fg.c rbtree_fg.c rwl_write.o
 	$(CC) -c rbnode_fg.c $(CFLAGS) 
 	$(CC) -c rbtree_fg.c $(CFLAGS) 

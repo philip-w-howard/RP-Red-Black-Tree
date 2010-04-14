@@ -11,7 +11,7 @@
 #include <pthread.h>
 
 #include "lock.h"
-#include "rbtree.h"
+#include "avl.h"
 #include "atomic_ops.h"
 
 /*
@@ -57,7 +57,7 @@ typedef struct
 #define GOFLAG_STOP 2
 
 volatile int goflag = GOFLAG_INIT;
-rbtree_t My_Tree;
+avl_node_t My_Tree;
 
 typedef struct
 {
@@ -149,12 +149,12 @@ void init_tree_data(int count, void *lock)
     unsigned long value;
 
     Values = (unsigned long *)malloc(count*sizeof(unsigned long));
-    rb_create(&My_Tree, lock);
+    avl_create(&My_Tree, lock);
 
     for (ii=0; ii<count; ii++)
     {
         value = get_random(&seed) % Params.scale + 1;
-        while ( !rb_insert(&My_Tree, value, (void *)value) )
+        while ( !avl_insert(&My_Tree, value, (void *)value) )
         {
             value = get_random(&seed) % Params.scale + 1;
         }
@@ -309,13 +309,13 @@ void *perftest_thread(void *arg)
             {
                 long new_key=0;
 
-                value = rb_first(&My_Tree, &new_key);
+                value = avl_first(&My_Tree, &new_key);
                 assert(new_key == -1);
 
                 while (value != NULL)
                 {
                     key = new_key;
-                    value = rb_next(&My_Tree, key, &new_key);
+                    value = avl_next(&My_Tree, key, &new_key);
                     if (value != NULL && key >= new_key)
                     {
                         write_lock(My_Tree.lock);
@@ -323,7 +323,7 @@ void *perftest_thread(void *arg)
                                "%s\nkey: %ld new: %ld\n"
                                "******************************************\n", 
                                (char *)value, key, new_key);
-                        //rb_output(&My_Tree);
+                        //avl_output(&My_Tree);
                         goflag = GOFLAG_STOP;
                         write_unlock(My_Tree.lock);
                         return get_thread_stats(n_reads, n_inserts, n_insert_fails, 
@@ -337,10 +337,10 @@ void *perftest_thread(void *arg)
         case MODE_TRAVERSE:
             while (goflag == GOFLAG_RUN) 
             {
-                rbnode_t *new_node, *node;
+                avl_node_t *new_node, *node;
 
                 rw_lock(My_Tree.lock);
-                new_node = rb_first_n(&My_Tree);
+                new_node = avl_first_n(&My_Tree);
                 assert(new_node->key == -1);
 
                 while (new_node != NULL)
@@ -348,14 +348,14 @@ void *perftest_thread(void *arg)
                     node = new_node;
                     key = node->key;
 
-                    new_node = rb_next_n(node);
+                    new_node = avl_next_n(node);
                     if (new_node != NULL && node->key >= new_node->key)
                     {
                         printf("******************************************\n"
                                "%s\nkey: %ld new: %ld\n"
                                "******************************************\n", 
                                (char *)node->value, node->key, new_node->key);
-                        //rb_output(&My_Tree);
+                        //avl_output(&My_Tree);
                         goflag = GOFLAG_STOP;
                         rw_unlock(My_Tree.lock);
                         return get_thread_stats(n_reads, n_inserts, n_insert_fails, 
@@ -373,7 +373,7 @@ void *perftest_thread(void *arg)
             while (goflag == GOFLAG_RUN) 
             {
                 read_elem = get_random(&random_seed) % Params.scale;
-                value = rb_find(&My_Tree, read_elem);
+                value = avl_find(&My_Tree, read_elem);
                 n_reads++;
             }
             break;
@@ -381,7 +381,7 @@ void *perftest_thread(void *arg)
             while (goflag == GOFLAG_RUN)
             {
                 write_elem = get_random(&random_seed) % Params.size;
-                value = rb_remove(&My_Tree, Values[write_elem]);
+                value = avl_remove(&My_Tree, Values[write_elem]);
                 //ring_insert(&ring, 'D', Values[write_elem]);
                 if (value != NULL)
                     n_deletes++;
@@ -389,16 +389,16 @@ void *perftest_thread(void *arg)
                     n_delete_fails++;
 
                 /*
-                if (!rb_valid(&My_Tree)) 
+                if (!avl_valid(&My_Tree)) 
                 {
-                    rb_output_list(&My_Tree);
+                    avl_output_list(&My_Tree);
                     fprintf(stderr, "Invalid tree\n");
                     exit(-1);
                 }
                 */
 
                 int_value = get_random(&random_seed) % Params.scale + 1;
-                while ( !rb_insert(&My_Tree, int_value, (void *)int_value) )
+                while ( !avl_insert(&My_Tree, int_value, (void *)int_value) )
                 {
                     int_value = get_random(&random_seed) % Params.scale + 1;
                 }
@@ -406,9 +406,9 @@ void *perftest_thread(void *arg)
                 //ring_insert(&ring, 'I', Values[write_elem]);
                 n_inserts++;
                 /*
-                if (!rb_valid(&My_Tree)) 
+                if (!avl_valid(&My_Tree)) 
                 {
-                    rb_output_list(&My_Tree);
+                    avl_output_list(&My_Tree);
                     fprintf(stderr, "Invalid tree\n");
                     exit(-1);
                 }
@@ -537,8 +537,8 @@ int main(int argc, char *argv[])
         Params.mode == MODE_TRAVERSEN || Params.mode == MODE_TRAVERSENW )
     {
         unsigned long value;
-        rb_insert(&My_Tree, -1, &value);
-        rb_insert(&My_Tree, Params.scale + 1, &value);
+        avl_insert(&My_Tree, -1, &value);
+        avl_insert(&My_Tree, Params.scale + 1, &value);
     }
 
     for (ii=0; ii<MAX_THREADS; ii++)
@@ -582,7 +582,7 @@ int main(int argc, char *argv[])
     //{
         //printf("Realtime scheduling not active\n");
     //}
-    //rb_output(&My_Tree);
+    //avl_output(&My_Tree);
 
 	sleep(1);
     printf("init done\n");
@@ -614,7 +614,7 @@ int main(int argc, char *argv[])
     }
     printf("\n\n");
 
-    if (!rb_valid(&My_Tree)) rb_output_list(&My_Tree);
+    if (!avl_valid(&My_Tree)) avl_output_list(&My_Tree);
 
     return 0;
 }

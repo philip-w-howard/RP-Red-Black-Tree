@@ -548,13 +548,24 @@ int rb_insert(rbtree_t *tree, long key, void *value)
     return 1;
 }
 //*******************************
+// assumes node is NOT readlocked, but that the parent is
+// returns a readlocked node or NULL
 static rbnode_t *leftmost(rbnode_t *node)
 {
+    rbnode_t *next;
+
 	if (node == NULL) return NULL;
 
+    read_lock(node->lock);
 	while (node->left != NULL)
 	{
-		node = node->left;
+		next = node->left;
+        if (next != NULL)
+        {
+            read_lock(next->lock);
+            read_unlock(node);
+        }
+        node = next;
 	}
 	return node;
 }
@@ -685,7 +696,6 @@ void *rb_remove(rbtree_t *tree, long key)
 	void *value = NULL;
     int temp_color;
 
-    //printf("rb_remove write_lock\n");
 	node = find_node(tree, key);
 
     // not found
@@ -695,9 +705,8 @@ void *rb_remove(rbtree_t *tree, long key)
         return NULL;
     }
 
-    assert(IMPLEMENTED);
-
-    prev = node->parent;
+    printf("rm upgrade lock %ld\n", node->key);
+    upgrade_lock(node);
 
     // found it, so cut it out of the tree
     //******************* swap with external node if necessary ***************
@@ -705,6 +714,8 @@ void *rb_remove(rbtree_t *tree, long key)
     {
         // need to do a swap with leftmost on right branch
         swap = leftmost(node->right);
+        upgrade_lock(swap->lock);
+
         temp_color = swap->color;
         swap->color = node->color;
         node->color = temp_color;
@@ -712,11 +723,18 @@ void *rb_remove(rbtree_t *tree, long key)
         if (swap == node->right)
         {
             rcu_assign_pointer(swap->left, node->left);
+            write_lock(node->left->lock);
             node->left->parent = swap;      // safe: checked above
+            write_unlock(node->left->lock);
 
+            prev = node->parent;
             if (prev == NULL) {
+                write_lock(tree->lock);
                 rcu_assign_pointer(tree->root, swap);
+                write_unlock(tree->lock);
 			} else {
+                printf("rm write lock %ld\n", prev->key);
+                write_lock(prev->lock);
                 if (prev->left == node) {
                     rcu_assign_pointer(prev->left, swap);
                 } else {
@@ -724,9 +742,14 @@ void *rb_remove(rbtree_t *tree, long key)
 				}
 			}
             swap->parent = prev;
+            if (prev != NULL) write_unlock(prev->lock);
 
             prev = swap;
             next = swap->right;
+            // exit with 
+            //      prev=swap write locked
+            //      node write locked
+            //      next = swap->right NOT locked
         } else {
 #ifdef RCU
             assert(IMPLEMENTED);
@@ -735,23 +758,33 @@ void *rb_remove(rbtree_t *tree, long key)
 			rbnode_t *new_node = rbnode_copy(swap);
             //check_for(tree->root, new_node);
 			tree->swap_copies++;
+            write_lock(new_node->lock);
 
             rcu_assign_pointer(new_node->left, node->left);
+            write_lock(node->left->lock);
             node->left->parent = new_node;      // safe: checked above
+            write_unlock(node->left->lock);
 
             rcu_assign_pointer(new_node->right, node->right);
+            write_lock(node->right->lock);
             node->right->parent = new_node;     // safe: checked above
+            write_unlock(node->right->lock);
 
+            prev = node->parent;
             if (prev == NULL)
             {
+                write_lock(tree->lock);
                 rcu_assign_pointer(tree->root, new_node);
-                new_node->parent = prev;
+                write_unlock(tree->lock);
+                new_node->parent = NULL;
             } else {
+                write_lock(prev->lock);
                 if (is_left(node))
                     rcu_assign_pointer(prev->left, new_node);
                 else 
                     rcu_assign_pointer(prev->right, new_node);
                 new_node->parent = prev;
+                write_unlock(prev);
             }
 
             // need to make sure bprime is seen before path to b is erased 
@@ -763,6 +796,7 @@ void *rb_remove(rbtree_t *tree, long key)
             rcu_assign_pointer(prev->left, swap->right);
             if (swap->right != NULL) swap->right->parent = prev;
 
+            write_unlock(swap->lock);
 			rcu_free(tree->lock, rbnode_free, swap);
 #else
             prev = swap->parent;
