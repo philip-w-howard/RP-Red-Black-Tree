@@ -15,6 +15,7 @@ typedef struct avl_node_s
     volatile struct avl_node_s *left;
     volatile struct avl_node_s *right;
     void *lock;
+    unsigned long long index;
 } avl_node_t;
 
 extern avl_node_t *Retry;

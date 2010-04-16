@@ -144,7 +144,7 @@ void waste_time()
 void init_tree_data(int count, void *lock)
 {
     int ii;
-    unsigned long seed = random();
+    unsigned long seed = 12529127; // random();
     unsigned long value;
 
     Values = (unsigned long *)malloc(count*sizeof(unsigned long));
@@ -378,6 +378,7 @@ void *perftest_thread(void *arg)
             break;
         case MODE_WRITE:
             while (goflag == GOFLAG_RUN)
+            //for (count=0; count<Params.delay; count++)
             {
                 write_elem = get_random(&random_seed) % Params.size;
                 value = avl_remove(&My_Tree, Values[write_elem]);
@@ -399,6 +400,7 @@ void *perftest_thread(void *arg)
                 int_value = get_random(&random_seed) % Params.scale + 1;
                 while ( !avl_insert(&My_Tree, int_value, (void *)int_value) )
                 {
+                    n_insert_fails++;
                     int_value = get_random(&random_seed) % Params.scale + 1;
                 }
                 Values[write_elem] = int_value;

@@ -309,6 +309,7 @@ void rcu_synchronize(void *lock)
     // since a grace period just expired, we might as well clear out the
     // delete buffer
     head = rcu_lock->block.head;
+    //printf("RCU is freeing %d blocks\n", head);
     while (head > 0)
     {
         void (*func)(void *ptr);
@@ -328,7 +329,7 @@ void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
 
     Thread_Stats[STAT_FREE]++;
 
-    if (rcu_lock->block.head >= RCU_MAX_BLOCKS-1) rcu_synchronize(lock);
+    if (rcu_lock->block.head >= RCU_MAX_BLOCKS) rcu_synchronize(lock);
 
 
     rcu_lock->block.block[rcu_lock->block.head].block = ptr;
