@@ -34,7 +34,8 @@ rcu.o: rcu.c
 urcu.o: urcu.c 
 	$(CC) -c urcu.c $(UCFLAGS) 
 
-ccavl: avlmain.c ccavl.c avl.h rcu.o
+ccavl: avlmain.c ccavl.c avl.h rcu.c
+	$(CC) -c rcu.c $(CFLAGS) -DRCU -DMULTIWRITERS
 	$(CC) -c ccavl.c $(CFLAGS) -DRCU
 	$(CC) -o ccavl $(CFLAGS) avlmain.c ccavl.o rcu.o -DRCU
 
@@ -53,8 +54,9 @@ rb_rwl_read: rbmain.c rbnode.c rbtree.c rwl_read.o
 	$(CC) -c rbtree.c $(CFLAGS) 
 	$(CC) -o rb_rwl_read $(CFLAGS) rbmain.c $(objects) rwl_read.o
 
-rb_rcu: rbmain.c rbnode.c rbtree.c rcu.o
+rb_rcu: rbmain.c rbnode.c rbtree.c rcu.c
 	$(CC) -c rbnode.c $(CFLAGS) 
+	$(CC) -c rcu.c $(CFLAGS) -DRCU 
 	$(CC) -c rbtree.c $(CFLAGS) -DRCU 
 	$(CC) -o rb_rcu $(CFLAGS) rbmain.c -DRCU $(objects) rcu.o
 

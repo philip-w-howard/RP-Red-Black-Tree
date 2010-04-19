@@ -13,6 +13,7 @@
 #include "lock.h"
 #include "avl.h"
 #include "atomic_ops.h"
+#include "rcu.h"
 
 /*
  * Test variables.
@@ -66,9 +67,10 @@ typedef struct
     int cpus;
     int readers;
     int writers;
+    int poll_rcu;
 } param_t;
 
-param_t Params = {64, 10000, 1, MODE_READONLY, NUM_CPUS, 1, 0};
+param_t Params = {64, 10000, 1, MODE_READONLY, NUM_CPUS, 1, 0, 0};
 
 #define RING_SIZE 50
 
@@ -271,6 +273,30 @@ void *locktest_thread(void *arg)
             n_write_blank, n_write_read);
 }
 
+static void *rcu_thread(void *arg)
+{
+    thread_data_t *thread_data = (thread_data_t *)arg;
+
+    set_affinity(thread_data->thread_index);
+    lock_thread_init(thread_data->lock, thread_data->thread_index);
+    lock_mb();
+
+	while (goflag == GOFLAG_INIT)
+		poll(NULL, 0, 10);
+
+    while (goflag == GOFLAG_RUN) 
+    {
+        if (!rcu_poll(thread_data->lock)) poll(NULL, 0, 10);
+    }
+
+    poll(NULL, 0, 10);
+    while (rcu_poll(thread_data->lock)) 
+    {
+        poll(NULL, 0, 10);
+    }
+
+    return get_thread_stats(0, 0, 0, 0, 0);
+}
 void *perftest_thread(void *arg)
 {
     thread_data_t *thread_data = (thread_data_t *)arg;
@@ -434,7 +460,7 @@ void usage(int argc, char *argv[], char *bad_arg)
     if (bad_arg != NULL) fprintf(stderr, "Invalid param %s\n", bad_arg);
 
 	fprintf(stderr, 
-       "Usage: %s [c:<CPUS>] [m:<READ | TRAVERSE | TRAVERSEN>] [s:<tree size>] [S:<tree scale>] [w:<writers>] [r:<readers>]\n",
+       "Usage: %s [c:<CPUS>] [m:<READ | TRAVERSE | TRAVERSEN>] [s:<tree size>] [S:<tree scale>] [w:<writers>] [r:<readers>] [p]\n",
 
        argv[0]);
 	exit(-1);
@@ -474,6 +500,9 @@ void parse_args(int argc, char *argv[])
                     Params.mode = MODE_TRAVERSEN;
                 else
                     usage(argc, argv, argv[ii]);
+                break;
+            case 'p':
+                Params.poll_rcu = 1;
                 break;
             case 'r':
                 Params.readers = atoi(value);
@@ -551,6 +580,13 @@ int main(int argc, char *argv[])
                 perftest_thread, &thread_data[ii]);
 		//pthread_create(&thread_data[ii].thread_id, NULL,
         //        locktest_thread, &thread_data[ii]);
+    }
+
+    if (Params.poll_rcu)
+    {
+        pthread_create(&thread_data[ii].thread_id, NULL,
+                rcu_thread, &thread_data[ii]);
+        ii++;
     }
 
 	lock_mb();

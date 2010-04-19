@@ -13,6 +13,7 @@
 //#define rcu_free(l, f, p) defer_rcu(f,p)
 void rcu_synchronize(void *lock);
 void rcu_free(void *lock, void (*func)(void *ptr), void *ptr);
+#define rcu_poss(a) ({ 0; })
 
 #elif defined(RCU)
 
@@ -21,12 +22,14 @@ void rcu_free(void *lock, void (*func)(void *ptr), void *ptr);
 #define rcu_assign_pointer(p, v) ({ lock_mb(); (p) = (v); })
 void rcu_synchronize(void *lock);
 void rcu_free(void *lock, void (*func)(void *ptr), void *ptr);
+int rcu_poll(void *lock);
 
 #else
 
 #define rcu_assign_pointer(p,v) ({(p) = (v);})
 #define rcu_dereference(p) (*(volatile typeof(p) *)&(p))
 #define rcu_free(l,f,a) ({ (f)( (a) ); })
+#define rcu_poss(a) ({ 0; })
 
 #endif
 #endif  // __RCU_H

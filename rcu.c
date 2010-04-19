@@ -25,12 +25,15 @@ char *implementation_name()
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
     unsigned long long Thread_Stats[NSTATS+1];
 
-#define RCU_MAX_BLOCKS      20
+#define RCU_MAX_BLOCKS      40
+#define BLOCKS_FOR_FREE     10
+
 #define RWL_READ_INC        2
 #define RWL_ACTIVE_WRITER_FLAG 1
 
 typedef struct epoch_s
 {
+    pthread_t thread_id;
     __attribute__((__aligned__(CACHE_LINE_SIZE))) long long epoch;
     volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         struct epoch_s *next;
@@ -44,7 +47,7 @@ typedef struct
 typedef struct 
 {
     block_item_t block[RCU_MAX_BLOCKS];
-    int head;
+    volatile int head;
 } block_list_t;
 
 typedef struct
@@ -52,7 +55,7 @@ typedef struct
     volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         epoch_list_t *epoch_list;
     volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
-        long long rcu_epoch;
+        AO_t rcu_epoch;
     volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         block_list_t block;
     __attribute__((__aligned__(CACHE_LINE_SIZE))) 
@@ -85,7 +88,8 @@ void read_lock(void *lock)
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
 
     Thread_Stats[STAT_READ]++;
-    Thread_Epoch->epoch = rcu_lock->rcu_epoch + 1;
+    Thread_Epoch->epoch = AO_load(&rcu_lock->rcu_epoch);
+    Thread_Epoch->epoch++;
 
     // the following statement, though useless, is required if we want
     // to avoid a memory barrier. 
@@ -103,9 +107,7 @@ void read_lock(void *lock)
 
 void read_unlock(void *lock)
 {
-    rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
-
-    Thread_Epoch->epoch = rcu_lock->rcu_epoch;
+    Thread_Epoch->epoch--;
 }
 
 #ifdef RCU_USE_MUTEX
@@ -233,6 +235,8 @@ void *lock_init()
     rcu_lock_t *lock;
     lock = (rcu_lock_t *)malloc(sizeof(rcu_lock_t));
 
+    assert(sizeof(long long) == sizeof(AO_t));
+
     lock->epoch_list = NULL;
     lock->rcu_epoch = 0;
 
@@ -264,7 +268,8 @@ void lock_thread_init(void *lock, int thread_id)
 	/* guard against multiple thread start-ups and grace periods */
 	pthread_mutex_lock(&rcu_lock->rcu_writer_lock);
 
-    Thread_Epoch->epoch = rcu_lock->rcu_epoch;  // Thread is in the current epoch
+    Thread_Epoch->thread_id = pthread_self();
+    Thread_Epoch->epoch = AO_load(&rcu_lock->rcu_epoch);  // Thread is in the current epoch
     Thread_Epoch->next = rcu_lock->epoch_list;
 
     // add the new epoch into the list
@@ -276,28 +281,40 @@ void lock_thread_init(void *lock, int thread_id)
 
 void lock_thread_close(void *arg, int thread_id) {}
 
-void rcu_synchronize(void *lock)
+static void rcu_synchronize_l(void *lock)
 {
     volatile epoch_list_t *list;
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
     int head;
+    AO_t epoch;
+    pthread_t self;
 
+    printf("rcu_synchronize_l\n");
     Thread_Stats[STAT_SYNC]++;
     
 	// Advance to a new grace-period number, enforce ordering.
-    rcu_lock->rcu_epoch += 2;
-    lock_mb();
+    epoch = AO_fetch_and_add_full(&rcu_lock->rcu_epoch, 2);
+
+    //lock_mb();    // included as part of fetch_and_add, above
+
+    // fetch_and_add returns the PREVIOUS value. We'll re-add one to get
+    // the current epoch. We could also do AO_load, but a concurrent 
+    // rcu_synchronize might move us into a new epoch. Therefore, this is faster
+    // and safer.
+    epoch += 2;
 
 	/*
 	 * Wait until all active threads are out of their RCU read-side
 	 * critical sections or have seen the current epoch.
 	 */
 
+    self = pthread_self();
     list = rcu_lock->epoch_list;
     while (list != NULL)
     {
-        while (list->epoch < rcu_lock->rcu_epoch && 
-            (list->epoch & 0x01)) 
+        while (list->thread_id != self && 
+               list->epoch < epoch && 
+               (list->epoch & 0x01)) 
         {
             Thread_Stats[STAT_SPINS]++;
             // wait
@@ -315,7 +332,6 @@ void rcu_synchronize(void *lock)
         void (*func)(void *ptr);
 
         head--;
-        //rbnode_free(rcu_lock->block.block[head]);
         func = rcu_lock->block.block[head].func;
         func(rcu_lock->block.block[head].block);
     }
@@ -323,16 +339,85 @@ void rcu_synchronize(void *lock)
     rcu_lock->block.head = 0;
 }
 
+void rcu_synchronize(void *lock)
+{
+#ifdef MULTIWRITERS
+    int read_locked = 0;
+
+    if (Thread_Epoch->epoch & 0x0001)
+    {
+        read_locked = 1;
+        read_unlock(lock);
+    }
+    write_lock(lock);
+#endif
+
+    rcu_synchronize_l(lock);
+
+#ifdef MULTIWRITERS
+    write_unlock(lock);
+
+    if (read_locked) read_lock(lock);
+#endif
+}
+
 void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
 {
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
 
+#ifdef MULTIWRITERS
+    //int read_locked = 0;
+
+    //if (Thread_Epoch->epoch & 0x0001)
+    //{
+        //read_locked = 1;
+        //read_unlock(lock);
+    //}
+
+    // we need to loop until we have the write_lock AND space for our block
+    // If there isn't space, we need to release the write_lock to allow
+    // the polling thread to free space
+    write_lock(lock);
+    while (rcu_lock->block.head >= RCU_MAX_BLOCKS)
+    {
+        write_unlock(lock);
+        // wait for polling thread to free memory
+        lock_mb();
+
+        write_lock(lock);
+    }
+
+    assert(rcu_lock->block.head >= 0 && rcu_lock->block.head < RCU_MAX_BLOCKS);
+#else
+    if (rcu_lock->block.head >= RCU_MAX_BLOCKS) 
+    {
+        rcu_synchronize_l(lock);
+    }
+#endif
+
     Thread_Stats[STAT_FREE]++;
-
-    if (rcu_lock->block.head >= RCU_MAX_BLOCKS) rcu_synchronize(lock);
-
-
     rcu_lock->block.block[rcu_lock->block.head].block = ptr;
     rcu_lock->block.block[rcu_lock->block.head].func = func;
     rcu_lock->block.head++;
+
+#ifdef MULTIWRITERS
+    write_unlock(lock);
+
+//    if (read_locked) read_lock(lock);
+#endif
+
 }
+//*****************************************************
+int rcu_poll(void *lock)
+{
+    rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
+
+    if (rcu_lock->block.head > BLOCKS_FOR_FREE) 
+    {
+        rcu_synchronize(lock);
+        return 1;
+    }
+
+    return 0;
+}
+
