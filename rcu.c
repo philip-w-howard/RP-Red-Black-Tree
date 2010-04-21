@@ -1,4 +1,4 @@
-//#define _GNU_SOURCE
+////#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <memory.h>
@@ -25,8 +25,8 @@ char *implementation_name()
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
     unsigned long long Thread_Stats[NSTATS+1];
 
-#define RCU_MAX_BLOCKS      40
-#define BLOCKS_FOR_FREE     10
+#define RCU_MAX_BLOCKS      500
+#define BLOCKS_FOR_FREE     5
 
 #define RWL_READ_INC        2
 #define RWL_ACTIVE_WRITER_FLAG 1
@@ -266,7 +266,7 @@ void lock_thread_init(void *lock, int thread_id)
     Thread_Epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
     
 	/* guard against multiple thread start-ups and grace periods */
-	pthread_mutex_lock(&rcu_lock->rcu_writer_lock);
+	write_lock(lock);
 
     Thread_Epoch->thread_id = pthread_self();
     Thread_Epoch->epoch = AO_load(&rcu_lock->rcu_epoch);  // Thread is in the current epoch
@@ -276,20 +276,20 @@ void lock_thread_init(void *lock, int thread_id)
     rcu_lock->epoch_list = Thread_Epoch;
 
 	// Let other synchronize_rcu() instances move ahead.
-	pthread_mutex_unlock(&rcu_lock->rcu_writer_lock);
+	write_unlock(lock);
 }
 
 void lock_thread_close(void *arg, int thread_id) {}
 
-static void rcu_synchronize_l(void *lock)
+void rcu_synchronize(void *lock)
 {
     volatile epoch_list_t *list;
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
     int head;
     AO_t epoch;
     pthread_t self;
+    static int max_head = 0;
 
-    printf("rcu_synchronize_l\n");
     Thread_Stats[STAT_SYNC]++;
     
 	// Advance to a new grace-period number, enforce ordering.
@@ -319,10 +319,18 @@ static void rcu_synchronize_l(void *lock)
             Thread_Stats[STAT_SPINS]++;
             // wait
             lock_mb();
+            assert(rcu_lock->block.head < (RCU_MAX_BLOCKS-1));
+            if (max_head < rcu_lock->block.head) max_head = rcu_lock->block.head;
+            //printf("head: %d %d\n", rcu_lock->block.head, max_head);
         }
         list = list->next;
     }
 
+#ifdef MULTIWRITERS
+    write_lock(lock);
+#endif
+
+    //printf("rcu_synchronize is freeing memory\n");
     // since a grace period just expired, we might as well clear out the
     // delete buffer
     head = rcu_lock->block.head;
@@ -337,46 +345,22 @@ static void rcu_synchronize_l(void *lock)
     }
 
     rcu_lock->block.head = 0;
-}
-
-void rcu_synchronize(void *lock)
-{
-#ifdef MULTIWRITERS
-    int read_locked = 0;
-
-    if (Thread_Epoch->epoch & 0x0001)
-    {
-        read_locked = 1;
-        read_unlock(lock);
-    }
-    write_lock(lock);
-#endif
-
-    rcu_synchronize_l(lock);
 
 #ifdef MULTIWRITERS
     write_unlock(lock);
-
-    if (read_locked) read_lock(lock);
 #endif
 }
 
 void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
 {
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
+    int head;
 
 #ifdef MULTIWRITERS
-    //int read_locked = 0;
-
-    //if (Thread_Epoch->epoch & 0x0001)
-    //{
-        //read_locked = 1;
-        //read_unlock(lock);
-    //}
-
     // we need to loop until we have the write_lock AND space for our block
     // If there isn't space, we need to release the write_lock to allow
     // the polling thread to free space
+
     write_lock(lock);
     while (rcu_lock->block.head >= RCU_MAX_BLOCKS)
     {
@@ -391,19 +375,19 @@ void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
 #else
     if (rcu_lock->block.head >= RCU_MAX_BLOCKS) 
     {
-        rcu_synchronize_l(lock);
+        rcu_synchronize(lock);
     }
 #endif
 
     Thread_Stats[STAT_FREE]++;
-    rcu_lock->block.block[rcu_lock->block.head].block = ptr;
-    rcu_lock->block.block[rcu_lock->block.head].func = func;
-    rcu_lock->block.head++;
+    head = rcu_lock->block.head;
+    rcu_lock->block.block[head].block = ptr;
+    rcu_lock->block.block[head].func = func;
+    head++;
+    rcu_lock->block.head = head;
 
 #ifdef MULTIWRITERS
     write_unlock(lock);
-
-//    if (read_locked) read_lock(lock);
 #endif
 
 }

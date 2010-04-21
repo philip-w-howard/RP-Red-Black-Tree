@@ -35,7 +35,7 @@ urcu.o: urcu.c
 	$(CC) -c urcu.c $(UCFLAGS) 
 
 ccavl: avlmain.c ccavl.c avl.h rcu.c
-	$(CC) -c rcu.c $(CFLAGS) -DRCU -DMULTIWRITERS
+	$(CC) -c rcu.c $(CFLAGS) -DRCU -DMULTIWRITERS -DRCU_USE_MUTEX
 	$(CC) -c ccavl.c $(CFLAGS) -DRCU
 	$(CC) -o ccavl $(CFLAGS) avlmain.c ccavl.o rcu.o -DRCU
 

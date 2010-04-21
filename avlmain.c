@@ -70,7 +70,7 @@ typedef struct
     int poll_rcu;
 } param_t;
 
-param_t Params = {64, 10000, 1, MODE_READONLY, NUM_CPUS, 1, 0, 0};
+param_t Params = {64, 10000, 1, MODE_READONLY, NUM_CPUS, 0, 0, 0};
 
 #define RING_SIZE 50
 
@@ -176,7 +176,7 @@ void set_affinity(int cpu_number)
     //core = (cpu_number*8 + cpu_number/8) % Params.cpus;
     core = cpu_number % Params.cpus;
     result = processor_bind(P_LWPID, P_MYID, core, NULL);
-    if (result != 0) 
+    //if (result != 0) 
     {
         printf("Affinity result %d %d %d %d\n", result, errno, cpu_number, core);
     }
@@ -193,7 +193,7 @@ void set_affinity(int cpu_number)
     CPU_ZERO(&cpu);
     CPU_SET(cpu_number, &cpu);
     result = sched_setaffinity(0, sizeof(cpu_set_t), &cpu);
-    if (result != 0) 
+    //if (result != 0) 
     {
         printf("Affinity result %d %d %d\n", cpu_number, result, errno);
     }
@@ -281,12 +281,13 @@ static void *rcu_thread(void *arg)
     lock_thread_init(thread_data->lock, thread_data->thread_index);
     lock_mb();
 
-	while (goflag == GOFLAG_INIT)
-		poll(NULL, 0, 10);
+	//while (goflag == GOFLAG_INIT)
+	//	poll(NULL, 0, 10);
 
-    while (goflag == GOFLAG_RUN) 
+    while (goflag != GOFLAG_STOP) 
     {
-        if (!rcu_poll(thread_data->lock)) poll(NULL, 0, 10);
+        rcu_poll(thread_data->lock);
+        //if (!rcu_poll(thread_data->lock)) poll(NULL, 0, 10);
     }
 
     poll(NULL, 0, 10);
