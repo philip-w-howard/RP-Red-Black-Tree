@@ -1526,7 +1526,8 @@ static void output_list(volatile avl_node_t *node, int depth)
         printf(" L: %s", toString(node->left));
         printf(" R: %s", toString(node->right));
         if (avl_node_invalid(node, depth)) 
-            printf(" INVALID NODE: %d\n", avl_node_invalid(node, depth));
+            printf(" INVALID NODE: %d %llX\n", 
+                    avl_node_invalid(node, depth), node->changeOVL);
         else
             printf("\n");
         output_list(node->right, depth+1);
@@ -1633,4 +1634,15 @@ void check_for(volatile avl_node_t *node, volatile avl_node_t *new_node)
 
     check_for(node->left, new_node);
     check_for(node->right, new_node);
+}
+//**************************************
+int avl_size(avl_node_t *tree)
+{
+    int size = 0;
+    if (tree == NULL) return 0;
+    if (tree->value != NULL) size++;
+    size += avl_size((avl_node_t *)tree->left);
+    size += avl_size((avl_node_t *)tree->right);
+
+    return size;
 }

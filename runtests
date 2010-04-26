@@ -1,16 +1,23 @@
 #! /bin/bash
 rm -f redblack.log
-#for SIZE in 64 65536; do
-for SIZE in 65536; do
-    for ACCESS in TRAVERSE TRAVERSEW TRAVERSEN TRAVERSENW; do
-    #for ACCESS in READ WRITE; do
-        for ((ii=0; ii<1; ii++)); do
+for SIZE in 64 65536; do
+    #for ACCESS in TRAVERSE TRAVERSEW TRAVERSEN TRAVERSENW; do
+    for ACCESS in READ WRITE; do
+        for ((ii=0; ii<8; ii++)); do
             #for CPUS in {1..64}; do
             #for CPUS in 1 2 3 4 5 6 7 8 12 16 24 32 40 48 56 64; do
             for CPUS in 1 2 4 8 16 32 64; do
                 #for TEST in nolock rcu rwl_read rwl_write lock ; do
                 for TEST in rcu rwl_write rwl_read lock ; do
-                    ./rb_$TEST n:$CPUS m:$ACCESS s:$SIZE d:10 >> redblack.log
+                    if (($ACCESS == WRITE)); then
+                        READERS=$CPUS-1
+                        WRITERS=1
+                    else
+                        READERS=$CPUS
+                        WRITERS=0
+                    fi
+
+                    ./rb_$TEST r:$READERS w:$WRITERS m:$ACCESS s:$SIZE  >> redblack.log
                     echo "Iteration " $ii $TEST $CPUS $ACCESS $SIZE
                     who
                 done

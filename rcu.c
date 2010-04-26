@@ -379,6 +379,16 @@ void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
     }
 #endif
 
+    /*
+    {
+        int ii;
+        for (ii=0; ii<rcu_lock->block.head; ii++)
+        {
+            assert(ptr != rcu_lock->block.block[ii].block);
+        }
+    }
+    */
+
     Thread_Stats[STAT_FREE]++;
     head = rcu_lock->block.head;
     rcu_lock->block.block[head].block = ptr;

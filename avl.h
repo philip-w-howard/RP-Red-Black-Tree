@@ -34,5 +34,6 @@ void *avl_next(avl_node_t *tree, long prev_key, long *key);
 void avl_output_list(avl_node_t *tree);
 void avl_output(avl_node_t *tree);
 int avl_valid(avl_node_t *tree);
+int avl_size(avl_node_t *tree);
 
 #endif

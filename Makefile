@@ -1,11 +1,11 @@
 UCFLAGS = -Wall -O1 -I/u/pwh/local/include -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE -DRCU #-pg 
 # UCFLAGS = -Wall -pthread -g -O1 -I/u/pwh/local/include -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE -DRCU #-pg 
 #CFLAGS = -Wall -O1 -Wa,-xarch=v8plus -I/u/pwh/local/include # -pg -pthreads -g
-CFLAGS = -Wall -pthread -g -I/u/pwh/local/include # -O1 -pg 
+CFLAGS = -Wall -pthread -g -I/u/pwh/local/include -lrt # -O1 -pg 
 
 CC = gcc
 
-all: rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock ccavl parse # rcutest rb_fg # rb_urcu urcutest 
+all: rb_rwl_write rb_rwl_read rb_rcu rbl_rcu rb_lock rb_nolock ccavl parse # rcutest rb_fg # rb_urcu urcutest 
 
 stuff: aotest
 
@@ -53,6 +53,12 @@ rb_rwl_read: rbmain.c rbnode.c rbtree.c rwl_read.o
 	$(CC) -c rbnode.c $(CFLAGS) 
 	$(CC) -c rbtree.c $(CFLAGS) 
 	$(CC) -o rb_rwl_read $(CFLAGS) rbmain.c $(objects) rwl_read.o
+
+rbl_rcu: rbmain.c rbnode.c rbltree.c rcu.c
+	$(CC) -c rbnode.c $(CFLAGS) 
+	$(CC) -c rcu.c $(CFLAGS) -DRCU 
+	$(CC) -c rbltree.c $(CFLAGS) -DRCU 
+	$(CC) -o rbl_rcu $(CFLAGS) rbmain.c -DRCU rbnode.o rbltree.o rcu.o
 
 rb_rcu: rbmain.c rbnode.c rbtree.c rcu.c
 	$(CC) -c rbnode.c $(CFLAGS) 

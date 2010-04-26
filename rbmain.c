@@ -2,6 +2,7 @@
 #include <sched.h>
 #include <errno.h>
 #include <assert.h>
+#include <time.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,7 +69,7 @@ typedef struct
     int writers;
 } param_t;
 
-param_t Params = {64, 10000, 1, MODE_READONLY, NUM_CPUS, 1, 0};
+param_t Params = {64, 10000, 1, MODE_READONLY, NUM_CPUS, 0, 0};
 
 #define RING_SIZE 50
 
@@ -103,7 +104,28 @@ void ring_output(op_ring_buff_t *ring)
     printf("\n");
 }
 
+static unsigned long init_random_seed()
+{
+    unsigned long seed;
+    struct timespec cur_time;
+
+    clock_gettime(CLOCK_REALTIME, &cur_time);
+    seed = cur_time.tv_sec + cur_time.tv_nsec;
+
+    seed = 12397347;
+    printf("random seed: %ld 0x%08lX\n", seed, seed);
+    return seed;
+}
+
 unsigned long get_random(unsigned long *seed)
+{
+    unsigned int val = *seed;
+    val = val*214013+2531011;
+    *seed = val;
+    return val>>5 & 0x7FFFFFFF;
+}
+
+unsigned long get_random2(unsigned long *seed)
 {
     unsigned long a1 = *seed;
     unsigned long a2, a3;
@@ -119,7 +141,7 @@ unsigned long get_random(unsigned long *seed)
     return a3;
 }
 
-unsigned long old_get_random(unsigned long *seed)
+unsigned long get_random1(unsigned long *seed)
 {
     unsigned int val = *seed;
     val = (val*1103515245+12345)>>5;
@@ -144,7 +166,7 @@ void waste_time()
 void init_tree_data(int count, void *lock)
 {
     int ii;
-    unsigned long seed = random();
+    unsigned long seed = init_random_seed(); // random();
     unsigned long value;
 
     Values = (unsigned long *)malloc(count*sizeof(unsigned long));
@@ -278,7 +300,7 @@ void *perftest_thread(void *arg)
     int thread_index = thread_data->thread_index;
     int write_elem = thread_data->write_elem;
     int read_elem;
-    unsigned long random_seed = 1234;
+    unsigned long random_seed = init_random_seed();
     //unsigned long random_seed = random();
     void *value;
     unsigned long int_value;
@@ -379,6 +401,9 @@ void *perftest_thread(void *arg)
         case MODE_WRITE:
             while (goflag == GOFLAG_RUN)
             {
+                //if (n_deletes > 20000) break;
+                //if (n_deletes %1000 == 0) rb_output(&My_Tree);
+
                 write_elem = get_random(&random_seed) % Params.size;
                 value = rb_remove(&My_Tree, Values[write_elem]);
                 //ring_insert(&ring, 'D', Values[write_elem]);
@@ -386,6 +411,9 @@ void *perftest_thread(void *arg)
                     n_deletes++;
                 else
                     n_delete_fails++;
+
+                //printf("Deleted %ld\n", Values[write_elem]);
+                //rb_output(&My_Tree);
 
                 /*
                 if (!rb_valid(&My_Tree)) 
@@ -404,6 +432,10 @@ void *perftest_thread(void *arg)
                 Values[write_elem] = int_value;
                 //ring_insert(&ring, 'I', Values[write_elem]);
                 n_inserts++;
+
+                //printf("Inserted %ld\n", Values[write_elem]);
+                //rb_output(&My_Tree);
+
                 /*
                 if (!rb_valid(&My_Tree)) 
                 {
@@ -515,8 +547,8 @@ int main(int argc, char *argv[])
         tot_stats[ii] = 0;
     }
 
-    printf("%s_%d_%d Test: readers %d writers %d mode %d %d\n", 
-            implementation_name(), Params.size, Params.mode, 
+    printf("%s_%s_%d_%d Test: readers %d writers %d mode %d %d\n", 
+            argv[0], implementation_name(), Params.size, Params.mode, 
             Params.readers, Params.writers, Params.mode, Params.scale);
 
     lock = lock_init();

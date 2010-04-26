@@ -9,6 +9,7 @@
 #include <string.h>
 #include <poll.h>
 #include <pthread.h>
+#include <time.h>
 
 #include "lock.h"
 #include "avl.h"
@@ -70,7 +71,7 @@ typedef struct
     int poll_rcu;
 } param_t;
 
-param_t Params = {64, 10000, 1, MODE_READONLY, NUM_CPUS, 0, 0, 0};
+param_t Params = {64, 128, 1, MODE_READONLY, NUM_CPUS, 0, 0, 0};
 
 #define RING_SIZE 50
 
@@ -104,8 +105,20 @@ void ring_output(op_ring_buff_t *ring)
     }
     printf("\n");
 }
+//#define RANDOM_SEED  ( (unsigned long)time(NULL) ) // 12390325
+static unsigned long init_random_seed()
+{
+    unsigned long seed;
+    struct timespec cur_time;
 
-unsigned long get_random(unsigned long *seed)
+    clock_gettime(CLOCK_REALTIME, &cur_time);
+    seed = cur_time.tv_sec + cur_time.tv_nsec;
+
+    printf("random seed: %ld 0x%08lX\n", seed, seed);
+    return seed;
+}
+
+unsigned long get_random2(unsigned long *seed)
 {
     unsigned long a1 = *seed;
     unsigned long a2, a3;
@@ -121,7 +134,15 @@ unsigned long get_random(unsigned long *seed)
     return a3;
 }
 
-unsigned long old_get_random(unsigned long *seed)
+unsigned long get_random(unsigned long *seed)
+{
+    unsigned int val = *seed;
+    val = val*214013+2531011;
+    *seed = val;
+    return val>>5 & 0x7FFFFFFF;
+}
+
+unsigned long get_random1(unsigned long *seed)
 {
     unsigned int val = *seed;
     val = (val*1103515245+12345)>>5;
@@ -146,10 +167,9 @@ void waste_time()
 void init_tree_data(int count, void *lock)
 {
     int ii;
-    unsigned long seed = 12529127; // random();
+    unsigned long seed = init_random_seed(); // random();
     unsigned long value;
 
-    Values = (unsigned long *)malloc(count*sizeof(unsigned long));
     avl_create(&My_Tree, lock);
 
     for (ii=0; ii<count; ii++)
@@ -159,7 +179,6 @@ void init_tree_data(int count, void *lock)
         {
             value = get_random(&seed) % Params.scale + 1;
         }
-        Values[ii] = value;
     }
 }
 
@@ -176,9 +195,9 @@ void set_affinity(int cpu_number)
     //core = (cpu_number*8 + cpu_number/8) % Params.cpus;
     core = cpu_number % Params.cpus;
     result = processor_bind(P_LWPID, P_MYID, core, NULL);
-    //if (result != 0) 
+    if (result != 0) 
     {
-        printf("Affinity result %d %d %d %d\n", result, errno, cpu_number, core);
+        printf("Affinity result %d %d %d %d\n", result, errno, cpu_number,core);
     }
 }
 #else
@@ -193,7 +212,7 @@ void set_affinity(int cpu_number)
     CPU_ZERO(&cpu);
     CPU_SET(cpu_number, &cpu);
     result = sched_setaffinity(0, sizeof(cpu_set_t), &cpu);
-    //if (result != 0) 
+    if (result != 0) 
     {
         printf("Affinity result %d %d %d\n", cpu_number, result, errno);
     }
@@ -303,9 +322,7 @@ void *perftest_thread(void *arg)
     thread_data_t *thread_data = (thread_data_t *)arg;
     //int update_percent = thread_data->update_percent;
     int thread_index = thread_data->thread_index;
-    int write_elem = thread_data->write_elem;
-    int read_elem;
-    unsigned long random_seed = 1234;
+    unsigned long random_seed = init_random_seed();
     //unsigned long random_seed = random();
     void *value;
     unsigned long int_value;
@@ -398,51 +415,34 @@ void *perftest_thread(void *arg)
         case MODE_READONLY:
             while (goflag == GOFLAG_RUN) 
             {
-                read_elem = get_random(&random_seed) % Params.scale;
-                value = avl_find(&My_Tree, read_elem);
+                int_value = get_random(&random_seed) % Params.scale;
+                value = avl_find(&My_Tree, int_value);
                 n_reads++;
             }
             break;
         case MODE_WRITE:
             while (goflag == GOFLAG_RUN)
-            //for (count=0; count<Params.delay; count++)
             {
-                write_elem = get_random(&random_seed) % Params.size;
-                value = avl_remove(&My_Tree, Values[write_elem]);
-                //ring_insert(&ring, 'D', Values[write_elem]);
-                if (value != NULL)
-                    n_deletes++;
-                else
-                    n_delete_fails++;
-
+                int_value = get_random(&random_seed) % Params.size;
                 /*
-                if (!avl_valid(&My_Tree)) 
+                while (avl_remove(&My_Tree, int_value) == NULL)
                 {
-                    avl_output_list(&My_Tree);
-                    fprintf(stderr, "Invalid tree\n");
-                    exit(-1);
+                    n_delete_fails++;
+                    int_value = get_random(&random_seed) % Params.size;
                 }
+                n_deletes++;
                 */
+                if (avl_remove(&My_Tree, int_value) == NULL)
+                    n_delete_fails++;
+                else
+                    n_deletes++;
 
                 int_value = get_random(&random_seed) % Params.scale + 1;
-                while ( !avl_insert(&My_Tree, int_value, (void *)int_value) )
-                {
+                if ( avl_insert(&My_Tree, int_value, (void *)int_value) )
+                    n_inserts++;
+                else
                     n_insert_fails++;
-                    int_value = get_random(&random_seed) % Params.scale + 1;
-                }
-                Values[write_elem] = int_value;
-                //ring_insert(&ring, 'I', Values[write_elem]);
-                n_inserts++;
-                /*
-                if (!avl_valid(&My_Tree)) 
-                {
-                    avl_output_list(&My_Tree);
-                    fprintf(stderr, "Invalid tree\n");
-                    exit(-1);
-                }
-                */
             }
-            //ring_output(&ring);
             break;
     }
 
@@ -514,7 +514,7 @@ void parse_args(int argc, char *argv[])
                 Params.size = atoi(value);
                 if (Params.size < 1) usage(argc, argv, argv[ii]);
 
-                if (Params.scale < Params.size*100) Params.scale = Params.size*100;
+                if (Params.scale < Params.size*2) Params.scale = Params.size*2;
                 break;
             case 'S':
                 Params.scale = atoi(value);
@@ -547,14 +547,16 @@ int main(int argc, char *argv[])
         tot_stats[ii] = 0;
     }
 
-    printf("%s_%d_%d Test: readers %d writers %d mode %d %d\n", 
+    fprintf(stderr, "%s_%d_%d Test: r:%d w:%d p:%d mode %d %d\n", 
             implementation_name(), Params.size, Params.mode, 
-            Params.readers, Params.writers, Params.mode, Params.scale);
+            Params.readers, Params.writers, Params.poll_rcu, Params.mode, Params.scale);
+    printf("%s_%d_%d Test: r:%d w:%d p:%d mode %d %d\n", 
+            implementation_name(), Params.size, Params.mode, 
+            Params.readers, Params.writers, Params.poll_rcu, Params.mode, Params.scale);
 
     lock = lock_init();
     lock_thread_init(lock, 0);
     init_tree_data(Params.size, lock);
-
 
     if (Params.mode == MODE_TRAVERSE || Params.mode == MODE_TRAVERSEN)
     {
@@ -562,6 +564,8 @@ int main(int argc, char *argv[])
         avl_insert(&My_Tree, -1, &value);
         avl_insert(&My_Tree, Params.scale + 1, &value);
     }
+
+    printf("pre tree size: %d\n", avl_size(&My_Tree));
 
     for (ii=0; ii<MAX_THREADS; ii++)
     {
@@ -612,6 +616,8 @@ int main(int argc, char *argv[])
 	lock_mb();
 	goflag = GOFLAG_STOP;
 	lock_mb();
+
+    printf("post tree size: %d\n", avl_size(&My_Tree));
 
 	for (ii = 0; ii < Params.readers+Params.writers; ii++)
     {
