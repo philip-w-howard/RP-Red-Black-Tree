@@ -7,7 +7,9 @@ typedef unsigned long long count_t;
 typedef struct info_s
 {
     char *test;
-    int  nthreads;
+    int  size;
+    int readers;
+    int writers;
     count_t reads;
     count_t writes;
     struct info_s *next;
@@ -15,18 +17,22 @@ typedef struct info_s
 
 #define MAX_TESTS 30
 
-static void insert(info_t *dataset, char *test, int nthreads, count_t reads, count_t writes)
+static void insert(info_t *dataset, char *test, int size, int readers, int writers,
+        count_t reads, count_t writes)
 {
     int ii;
     info_t *node;
 
+    printf("insert %s %d %d %d\n", test, size, readers, writers);
     for (ii=0; ii<MAX_TESTS; ii++)
     {
         if (dataset[ii].test == NULL)
         {
             dataset[ii].test = (char *)malloc(strlen(test)+1);
             strcpy( dataset[ii].test, test);
-            dataset[ii].nthreads = nthreads;
+            dataset[ii].size = size;
+            dataset[ii].readers = readers;
+            dataset[ii].writers = writers;
             dataset[ii].reads = reads;
             dataset[ii].writes = writes;
             dataset[ii].next = NULL;
@@ -38,7 +44,9 @@ static void insert(info_t *dataset, char *test, int nthreads, count_t reads, cou
             node = (info_t *)malloc(sizeof(info_t));
 
             node->test = NULL;
-            node->nthreads = nthreads;
+            node->size = size;
+            node->readers = readers;
+            node->writers = writers;
             node->reads = reads;
             node->writes = writes;
             node->next = dataset[ii].next;
@@ -55,10 +63,12 @@ static void insert(info_t *dataset, char *test, int nthreads, count_t reads, cou
 static void output(info_t *dataset)
 {
     int n_tests, ii;
-    int threads;
+    int size;
+    int readers;
+    int writers;
     info_t *temp;
 
-    printf("threads");
+    printf("threads\treaders\twriters");
 
     n_tests = 0;
     while (n_tests < MAX_TESTS && dataset[n_tests].test != NULL)
@@ -70,12 +80,16 @@ static void output(info_t *dataset)
 
     while (dataset[0].test != NULL)
     {
-        threads = dataset[0].nthreads;
-        printf("%d", threads);
+        size = dataset[0].size;
+        readers = dataset[0].readers;
+        writers = dataset[0].writers;
+        printf("%d\t%d\t%d", size, readers, writers);
 
         for (ii=0; ii<n_tests; ii++)
         {
-            if (dataset[ii].nthreads != threads)
+            if (dataset[ii].writers != writers ||
+                dataset[ii].readers != readers ||
+                dataset[ii].size    != size)
             {
                 fprintf(stderr, "dataset mismatch\n");
                 exit(-1);
@@ -88,7 +102,9 @@ static void output(info_t *dataset)
             else
             {
                 temp = dataset[ii].next;
-                dataset[ii].nthreads = dataset[ii].next->nthreads;
+                dataset[ii].size = dataset[ii].next->size;
+                dataset[ii].readers = dataset[ii].next->readers;
+                dataset[ii].writers = dataset[ii].next->writers;
                 dataset[ii].reads = dataset[ii].next->reads;
                 dataset[ii].writes = dataset[ii].next->writes;
                 dataset[ii].next = dataset[ii].next->next;
@@ -102,10 +118,23 @@ static void output(info_t *dataset)
 int main(int argc, char **argv)
 {
     char buff[1000];
-    char *name, *c_threads, *c_reads, *c_writes;
+    char *name, *c_size, *c_reads, *c_writes;
+    char *c_readers, *c_writers;
     int line_count = 0;
     int ii;
-    FILE *input = fopen("redblack.txt", "r");
+    FILE *input;
+
+    if (argc > 1)
+    {
+        input = fopen(argv[1], "r");
+        if (input == NULL)
+        {
+            fprintf(stderr, "unable to open %s\n", argv[1]);
+            exit(-1);
+        }
+    } else {
+        input = stdin;
+    }
 
     info_t dataset[MAX_TESTS];
     for (ii=0; ii<MAX_TESTS; ii++)
@@ -116,19 +145,23 @@ int main(int argc, char **argv)
     while (fgets(buff, sizeof(buff), input))
     {
         line_count++;
-
         name = strtok(buff, " ");
-        c_threads = strtok(NULL, " ");
+        c_size = strtok(NULL, " ");
+        c_readers = strtok(NULL, " ");
+        c_writers = strtok(NULL, " ");
         c_reads = strtok(NULL, " ");
         c_writes = strtok(NULL, " ");
 
         if (c_writes == NULL)
         {
-            fprintf(stderr, "Invalid line at %d\n", line_count);
+            fprintf(stderr, "Invalid line at %d\n"
+                    "%s %s %s %s %s %s\n", line_count,
+                    name, c_size, c_readers, c_writers, c_reads, c_writes);
             exit(-1);
         }
 
-        insert(dataset, name, atoi(c_threads), atoll(c_reads), atoll(c_writes));
+        insert(dataset, name, atoi(c_size), atoi(c_readers), atoi(c_writers),
+                atoll(c_reads), atoll(c_writes));
     }
 
     output(dataset);

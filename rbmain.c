@@ -498,6 +498,8 @@ void parse_args(int argc, char *argv[])
             case 'm':
                 if (strcmp(value, "READ")==0)
                     Params.mode = MODE_READONLY;
+                else if (strcmp(value, "WRITE") == 0)
+                    Params.mode = MODE_WRITE;
                 else if (strcmp(value, "TRAVERSE") == 0)
                     Params.mode = MODE_TRAVERSE;
                 else if (strcmp(value, "TRAVERSEN") == 0)
@@ -547,8 +549,8 @@ int main(int argc, char *argv[])
         tot_stats[ii] = 0;
     }
 
-    printf("%s_%s_%d_%d Test: readers %d writers %d mode %d %d\n", 
-            argv[0], implementation_name(), Params.size, Params.mode, 
+    printf("Test: %s %d readers %d writers %d mode %d %d\n", 
+            argv[0], Params.size,
             Params.readers, Params.writers, Params.mode, Params.scale);
 
     lock = lock_init();

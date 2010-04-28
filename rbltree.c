@@ -51,13 +51,65 @@ void rb_create(rbtree_t *tree, void *lock)
 //*******************************
 static rbnode_t *find_leaf(rbnode_t *node, long key)
 {
+    rbnode_t *last = node;
+    rbnode_t *temp;
+
+	while (node != NULL)
+	{
+        last = node;
+
+        if (node->left==NULL && node->right==NULL)
+            return node;
+        else if (key < node->key)
+        {
+            if (node->left == NULL) return node;
+            node = rcu_dereference(node->left);
+        }
+        else if (key > node->key)
+        {
+            if (node->right == NULL) return node;
+            node = rcu_dereference(node->right);
+        }
+        else // (key == node->key)
+        {
+            if ((temp=node->left) != NULL && temp->key == key)
+                node = rcu_dereference(temp);
+            else if ( (temp=node->right) != NULL && temp->key == key)
+                node = rcu_dereference(temp);
+            else 
+            {
+                temp = node->left;
+                if (temp != NULL)
+                {
+                    temp=find_leaf(temp, key);
+
+                    if (temp!=NULL && temp->key==key) return temp;
+                }
+
+                temp = node->right;
+                if (temp != NULL)
+                {
+                    temp = find_leaf(node->right, key);
+                    if (temp != NULL) return temp;
+                }
+
+                return node;
+            }
+        }
+    }
+
+    return last;
+}
+//*******************************
+rbnode_t *old_find_leaf(rbnode_t *node, long key)
+{
 	while (node != NULL && node->left != NULL)
 	{
 		if (key == node->key) 
         {
             if (node->left->key == key)
                 node = rcu_dereference(node->left);
-            else if (node->right->key == key)
+            else if (node->right != NULL && node->right->key == key)
                 node = rcu_dereference(node->right);
             else 
             {
@@ -67,7 +119,15 @@ static rbnode_t *find_leaf(rbnode_t *node, long key)
                 if (temp!=NULL && temp->key==key)
                     node = temp;
                 else
-                    node = find_leaf(node->right, key);
+                {
+                    if (node->right == NULL) return node;
+
+                    temp = find_leaf(node->right, key);
+                    if (temp != NULL)
+                        return temp;
+                    else
+                        return node;
+                }
             }
         }
         else if (key < node->key) 
