@@ -110,12 +110,14 @@ int rbnode_invalid(rbnode_t *node, int depth)
     if (node == NULL) return 0;
     if (node->left  != NULL && node->key < node->left->key)  return 2;
     if (node->right != NULL && node->key > node->right->key) return 3;
+    if (node->left  != NULL && node->left->parent != node)   return 4;
+    if (node->right != NULL && node->right->parent != node)  return 5;
 
     sptr = (long long *)node;
     eptr = (extended_node_t *)&sptr[-1];
     //printf("rb_free %p %p\n", ptr, eptr);
-    if (eptr->band1 != 0x0BADBAD0) return 4;
-    if (eptr->band2 != 0x0DABDAB0) return 5;
+    if (eptr->band1 != 0x0BADBAD0) return 6;
+    if (eptr->band2 != 0x0DABDAB0) return 7;
 
     return 0;
 }

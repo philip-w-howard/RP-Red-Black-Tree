@@ -15,7 +15,7 @@ void rcu_synchronize(void *lock);
 void rcu_free(void *lock, void (*func)(void *ptr), void *ptr);
 #define rcu_poss(a) ({ 0; })
 
-#elif defined(RCU)
+#elif defined(RCU) || defined(NO_GRACE_PERIOD)
 
 /* Assume DEC Alpha is dead.  Long live DEC Alpha. */
 #define rcu_dereference(p) (*(volatile typeof(p) *)&(p))

@@ -7,8 +7,10 @@ typedef struct
 {
 	rbnode_t *root;
     unsigned long long restructure_copies;
+    unsigned long long restructure_multi_copies;
 	unsigned long long swap_copies;
     unsigned long long restructures;
+    unsigned long long grace_periods;
     void *lock;
 } rbtree_t;
 

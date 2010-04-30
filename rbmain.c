@@ -40,6 +40,7 @@ typedef struct
 #define MODE_WRITE          1
 #define MODE_TRAVERSE       2
 #define MODE_TRAVERSEN      3
+#define MODE_NOOP           4
 
 typedef struct
 {
@@ -112,7 +113,8 @@ static unsigned long init_random_seed()
     clock_gettime(CLOCK_REALTIME, &cur_time);
     seed = cur_time.tv_sec + cur_time.tv_nsec;
 
-    seed = 12397347;
+    seed = 1436211071;
+
     printf("random seed: %ld 0x%08lX\n", seed, seed);
     return seed;
 }
@@ -179,6 +181,8 @@ void init_tree_data(int count, void *lock)
         {
             value = get_random(&seed) % Params.scale + 1;
         }
+        printf("Insert %ld\n", value);
+        rb_output(&My_Tree);
         Values[ii] = value;
     }
 }
@@ -307,6 +311,7 @@ void *perftest_thread(void *arg)
     long key=0;
 
     unsigned long long n_reads = 0;
+    unsigned long long n_read_fails = 0;
     unsigned long long n_inserts = 0;
     unsigned long long n_insert_fails = 0;
     unsigned long long n_deletes = 0;
@@ -325,6 +330,12 @@ void *perftest_thread(void *arg)
 
     switch (thread_data->mode)
     {
+        case MODE_NOOP:
+            while (goflag == GOFLAG_RUN) 
+            {
+                poll(NULL, 0, 10);
+            }
+            break;
         case MODE_TRAVERSEN:
             while (goflag == GOFLAG_RUN) 
             {
@@ -394,8 +405,12 @@ void *perftest_thread(void *arg)
             while (goflag == GOFLAG_RUN) 
             {
                 read_elem = get_random(&random_seed) % Params.scale;
-                value = rb_find(&My_Tree, read_elem);
-                n_reads++;
+                value = rb_find(&My_Tree, Values[read_elem]);
+                //printf("read %ld %ld\n", (unsigned long)value, Values[read_elem]);
+                if ((unsigned long)value == Values[read_elem])
+                    n_reads++;
+                else
+                    n_read_fails++;
             }
             break;
         case MODE_WRITE:
@@ -451,7 +466,7 @@ void *perftest_thread(void *arg)
 
     lock_thread_close(thread_data->lock, thread_index);
 
-    return get_thread_stats(n_reads, n_inserts, n_insert_fails, 
+    return get_thread_stats(n_reads, n_inserts, n_read_fails, 
             n_deletes, n_delete_fails);
 }
 
@@ -504,6 +519,8 @@ void parse_args(int argc, char *argv[])
                     Params.mode = MODE_TRAVERSE;
                 else if (strcmp(value, "TRAVERSEN") == 0)
                     Params.mode = MODE_TRAVERSEN;
+                else if (strcmp(value, "NOOP") == 0)
+                    Params.mode = MODE_NOOP;
                 else
                     usage(argc, argv, argv[ii]);
                 break;
@@ -628,6 +645,10 @@ int main(int argc, char *argv[])
     }
     printf("\n\n");
 
+    printf("copy %lld mcopy %lld swap %lld rest %lld gp %lld\n",
+            My_Tree.restructure_copies, My_Tree.restructure_multi_copies, 
+            My_Tree.swap_copies, My_Tree.restructures, 
+            My_Tree.grace_periods); 
     if (!rb_valid(&My_Tree)) rb_output_list(&My_Tree);
 
     return 0;

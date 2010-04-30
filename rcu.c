@@ -14,19 +14,25 @@ char *implementation_name()
     return "RCU";
 }
 
-#define NSTATS      11
+#define NSTATS      12
 #define STAT_READ   6
 #define STAT_WRITE  7
 #define STAT_SPINS  8
 #define STAT_SYNC   9
 #define STAT_RWSPINS  10
 #define STAT_FREE   11
+#define STAT_FREE_SYNC 12
 
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
     unsigned long long Thread_Stats[NSTATS+1];
 
+#ifdef MULTIWRITERS
 #define RCU_MAX_BLOCKS      500
 #define BLOCKS_FOR_FREE     5
+#else
+#define RCU_MAX_BLOCKS      20
+#define BLOCKS_FOR_FREE     (RCU_MAX_BLOCKS-2)
+#endif
 
 #define RWL_READ_INC        2
 #define RWL_ACTIVE_WRITER_FLAG 1
@@ -356,6 +362,7 @@ void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
     rcu_lock_t *rcu_lock = (rcu_lock_t *)lock;
     int head;
 
+    assert(ptr != NULL);
 #ifdef MULTIWRITERS
     // we need to loop until we have the write_lock AND space for our block
     // If there isn't space, we need to release the write_lock to allow
@@ -373,8 +380,9 @@ void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
 
     assert(rcu_lock->block.head >= 0 && rcu_lock->block.head < RCU_MAX_BLOCKS);
 #else
-    if (rcu_lock->block.head >= RCU_MAX_BLOCKS) 
+    if (rcu_lock->block.head >= BLOCKS_FOR_FREE) 
     {
+        Thread_Stats[STAT_FREE_SYNC]++;
         rcu_synchronize(lock);
     }
 #endif

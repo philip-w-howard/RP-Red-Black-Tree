@@ -5,12 +5,12 @@ ARCHFLAGS = -pthread -g
 URCUFLAGS = -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE
 RCUFLAGS = -DRCU
 AVLFLAGS = -DRCU -DMULTIWRITERS -DRCU_USE_MUTEX
-CFLAGS = -Wall -O1 -I/u/pwh/local/include $(ARCHFLAGS) # -O1 -pg 
+CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) # -O1 -pg 
 LFLAGS = -lrt $(CFLAGS)
 
 CC = gcc
 
-all: rb_rwl_write rb_rwl_read rb_rcu rbl_rcu rb_lock rb_nolock ccavl parse # rcutest rb_fg # rb_urcu urcutest 
+all: rb_rwl_write rb_rwl_read rb_rcu rbl_rcu ngp rb_lock rb_nolock ccavl parse # rcutest rb_fg # rb_urcu urcutest 
 
 stuff: aotest
 
@@ -64,6 +64,12 @@ rbl_rcu: rbmain.c rbnode.c rbltree.c rcu.c
 	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) 
 	$(CC) -c rbltree.c $(CFLAGS) $(RCUFLAGS) 
 	$(CC) -o rbl_rcu $(LFLAGS) rbmain.c $(RCUFLAGS) rbnode.o rbltree.o rcu.o
+
+ngp: rbmain.c rbnode.c rbtree.c rcu.c
+	$(CC) -c rbnode.c $(CFLAGS) 
+	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) 
+	$(CC) -c rbtree.c $(CFLAGS) -DNO_GRACE_PERIOD
+	$(CC) -o ngp $(LFLAGS) rbmain.c $(RCUFLAGS) rbnode.o rbtree.o rcu.o
 
 rb_rcu: rbmain.c rbnode.c rbtree.c rcu.c
 	$(CC) -c rbnode.c $(CFLAGS) 
