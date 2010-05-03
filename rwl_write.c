@@ -49,7 +49,7 @@ void lock_status(void *vlock, char *text)
     AO_t temp1 = AO_load(&(lock->write_requests));
     AO_t temp2 = AO_load(&(lock->write_completions));
     AO_t temp3 = AO_load(&(lock->reader_count_and_flag));
-    printf("%s %lX %lX %lX %lX\n", text, (unsigned long)vlock, temp1, temp2, temp3);
+    printf("%s %lX %llX %llX %llX\n", text, (unsigned long)vlock, temp1, temp2, temp3);
 }
 //**********************************************
 void lock_thread_init(void *lock, int thread_id)

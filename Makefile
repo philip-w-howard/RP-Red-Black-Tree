@@ -1,6 +1,9 @@
 
+ifndef __sparc__
 ARCHFLAGS = -pthread -g
-#ARCHFLAGS = -Wa,-xarch=v8plus
+else
+ARCHFLAGS = -Wa,-xarch=v8plus
+endif
 
 URCUFLAGS = -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE
 RCUFLAGS = -DRCU
@@ -10,12 +13,14 @@ LFLAGS = -lrt $(CFLAGS)
 
 CC = gcc
 
-all: rb_rwl_write rb_rwl_read rb_rcu rbl_rcu ngp rb_lock rb_nolock ccavl parse # rcutest rb_fg # rb_urcu urcutest 
+TARGETS = rb_rwl_write rb_rwl_read rb_rcu rbl_rcu ngp rb_lock rb_nolock ccavl parse # rcutest rb_fg # rb_urcu urcutest 
+all: $(TARGETS)
 
 stuff: aotest
 
 clean:
-	rm *.o
+	rm -f *.o
+	rm -f $(TARGETS)
 
 #all: gettimestamp gettimestampmp rcu rcu64 rcu_lock rcu_lock_percpu rcu_nest rcu_nest_qs rcu_qs rcu_ts
 

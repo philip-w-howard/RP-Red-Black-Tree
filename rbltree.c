@@ -52,53 +52,24 @@ void rb_create(rbtree_t *tree, void *lock)
 static rbnode_t *find_leaf(rbnode_t *node, long key)
 {
     rbnode_t *last = node;
-    rbnode_t *temp;
 
-	while (node != NULL)
+	while (node != NULL && key != node->key)
 	{
         last = node;
 
-        if (node->left==NULL && node->right==NULL)
-            return node;
-        else if (key < node->key)
+        if (key < node->key)
         {
-            if (node->left == NULL) return node;
             node = rcu_dereference(node->left);
         }
         else if (key > node->key)
         {
-            if (node->right == NULL) return node;
             node = rcu_dereference(node->right);
-        }
-        else // (key == node->key)
-        {
-            if ((temp=node->left) != NULL && temp->key == key)
-                node = rcu_dereference(temp);
-            else if ( (temp=node->right) != NULL && temp->key == key)
-                node = rcu_dereference(temp);
-            else 
-            {
-                temp = node->left;
-                if (temp != NULL)
-                {
-                    temp=find_leaf(temp, key);
-
-                    if (temp!=NULL && temp->key==key) return temp;
-                }
-
-                temp = node->right;
-                if (temp != NULL)
-                {
-                    temp = find_leaf(node->right, key);
-                    if (temp != NULL) return temp;
-                }
-
-                return node;
-            }
         }
     }
 
-    return last;
+    //assert(node==NULL || (node->left==NULL && node->right==NULL));
+    if (node==NULL) return last;
+    return node;
 }
 //*******************************
 rbnode_t *old_find_leaf(rbnode_t *node, long key)
@@ -142,6 +113,8 @@ rbnode_t *old_find_leaf(rbnode_t *node, long key)
 void *rb_find(rbtree_t *tree, long key)
 {
     void *value;
+
+    key *= 10;
 
     read_lock(tree->lock);
 	rbnode_t *node = find_leaf(tree->root, key);
@@ -513,22 +486,31 @@ int rb_insert(rbtree_t *tree, long key, void *value)
     rbnode_t *new_node;
     rbnode_t *node;
 
+    key *= 10;
+
     //printf("rb_insert write_lock\n");
     write_lock(tree->lock);
-
-    new_node = rbnode_create(key, value);
 
     //check_for(tree->root, new_node);
 
     node = find_leaf(tree->root, key);
 	if (node == NULL)
 	{
+        new_node = rbnode_create(key, value);
         new_node->color = BLACK;
 		rcu_assign_pointer(tree->root, new_node);
         write_unlock(tree->lock);
         return 1;
 	} else {
-        rbnode_t *new_sib = rbnode_copy(node);
+        rbnode_t *new_sib;
+
+        if (node->key == key)
+        {
+            write_unlock(tree->lock);
+            return 0;
+        }
+        new_node = rbnode_create(key, value);
+        new_sib = rbnode_copy(node);
         
         new_node->color = RED;
         new_sib->color = RED;
@@ -537,11 +519,13 @@ int rb_insert(rbtree_t *tree, long key, void *value)
         new_sib->parent = node;
         if (key < node->key)
         {
+            node->key -= 5;
             rcu_assign_pointer(node->right, new_sib);
             rcu_assign_pointer(node->left,  new_node);
         }
         else
         {
+            node->key += 5;
             rcu_assign_pointer(node->right, new_node);
             rcu_assign_pointer(node->left,  new_sib);
         }
@@ -723,6 +707,8 @@ void *rb_remove(rbtree_t *tree, long key)
 	//rbnode_t *swap = NULL;
 	void *value = NULL;
     //int temp_color;
+
+    key *= 10;
 
     write_lock(tree->lock);
 

@@ -17,7 +17,12 @@
 // root of the tree. This is necessary so rcu_free can be passed the tree lock
 // rather than the node lock.
 //***********************************************
+#ifdef __sparc__
+static avl_node_t *My_Tree;
+#warning "NEED __thread TO MAKE THIS WORK"
+#else
 static __thread avl_node_t *My_Tree;
+#endif
 
 #define STACK_SIZE      20
 

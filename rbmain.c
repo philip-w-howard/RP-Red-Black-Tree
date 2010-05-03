@@ -113,9 +113,9 @@ static unsigned long init_random_seed()
     clock_gettime(CLOCK_REALTIME, &cur_time);
     seed = cur_time.tv_sec + cur_time.tv_nsec;
 
-    seed = 1436211071;
+    //seed = 1436211071;
 
-    printf("random seed: %ld 0x%08lX\n", seed, seed);
+    //printf("random seed: %ld 0x%08lX\n", seed, seed);
     return seed;
 }
 
@@ -181,8 +181,8 @@ void init_tree_data(int count, void *lock)
         {
             value = get_random(&seed) % Params.scale + 1;
         }
-        printf("Insert %ld\n", value);
-        rb_output(&My_Tree);
+        //printf("Insert %ld\n", value);
+        //rb_output(&My_Tree);
         Values[ii] = value;
     }
 }
@@ -404,13 +404,18 @@ void *perftest_thread(void *arg)
         case MODE_READONLY:
             while (goflag == GOFLAG_RUN) 
             {
-                read_elem = get_random(&random_seed) % Params.scale;
+                read_elem = get_random(&random_seed) % Params.size;
                 value = rb_find(&My_Tree, Values[read_elem]);
                 //printf("read %ld %ld\n", (unsigned long)value, Values[read_elem]);
                 if ((unsigned long)value == Values[read_elem])
                     n_reads++;
                 else
+                {
                     n_read_fails++;
+                    //printf("Failed to find %ld\n", Values[read_elem]);
+                    //rb_output(&My_Tree);
+                    //exit(-1);
+                }
             }
             break;
         case MODE_WRITE:
