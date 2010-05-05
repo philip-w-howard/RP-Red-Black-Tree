@@ -138,8 +138,200 @@ static rbnode_t *sibling(rbnode_t *node)
 }
 //*******************************
 static void close_up(rbtree_t *tree, rbnode_t *node);
-//*******************************
+//**********
 static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
+                        rbnode_t **a, rbnode_t **b, rbnode_t **c)
+{
+    rbnode_t *aprime, *bprime, *cprime;
+    rbnode_t *greatgrandparent = grandparent->parent;
+    int left = 0;
+
+    tree->restructures++;
+
+    if (grandparent->parent != NULL) left = is_left(grandparent);
+    //printf("restructure %s\n", toString(node));
+
+    if (grandparent->left == parent && parent->left == node)
+    {
+        // diag left
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+        cprime = rbnode_copy(grandparent);
+        tree->restructure_copies++;
+        bprime = parent;
+        aprime = node;
+#else
+        aprime = node;
+        bprime = parent;
+        cprime = grandparent;
+#endif
+
+        cprime->left = bprime->right;
+        if (bprime->right != NULL) bprime->right->parent = cprime;
+        
+        rcu_assign_pointer(bprime->right, cprime);
+        cprime->parent = bprime;
+
+        if (greatgrandparent != NULL)
+        {
+            if (left) {
+                rcu_assign_pointer(greatgrandparent->left, bprime);
+            } else {
+                rcu_assign_pointer(greatgrandparent->right, bprime);
+            }
+
+            bprime->parent = greatgrandparent;
+        } else {
+            bprime->parent = NULL;
+            rcu_assign_pointer(tree->root, bprime);
+        }
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+        rcu_free(tree->lock, rbnode_free, grandparent);
+#endif
+    } 
+    else if (grandparent->left == parent && parent->right == node)
+    {
+        // zig left
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+        cprime = rbnode_copy(grandparent);
+        aprime = rbnode_copy(parent);
+        bprime = node;
+        tree->restructure_multi_copies++;
+
+        cprime->left = aprime;
+        aprime->parent = cprime;
+        aprime->right = bprime;
+        bprime->parent = aprime;
+#else
+        aprime = parent;
+        bprime = node;
+        cprime = grandparent;
+#endif
+        aprime->right = bprime->left;
+        if (bprime->left != NULL) bprime->left->parent = aprime;
+
+        cprime->left = bprime->right;
+        if (bprime->right != NULL) bprime->right->parent = cprime;
+
+        rcu_assign_pointer(bprime->left, aprime);
+        aprime->parent = bprime;
+
+        bprime->right = cprime;
+        cprime->parent = bprime;
+
+        if (greatgrandparent != NULL)
+        {
+            if (left) {
+                rcu_assign_pointer(greatgrandparent->left, bprime);
+            } else {
+                rcu_assign_pointer(greatgrandparent->right, bprime);
+            }
+
+            bprime->parent = greatgrandparent;
+        } else {
+            bprime->parent = NULL;
+            rcu_assign_pointer(tree->root, bprime);
+        }
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+        rcu_free(tree->lock, rbnode_free, parent);
+        rcu_free(tree->lock, rbnode_free, grandparent);
+#endif
+        if (aprime->right == NULL) close_up(tree, aprime);
+        if (cprime->left == NULL) close_up(tree, cprime);
+
+    }
+    else if (parent->right == node && grandparent->right == parent)
+    {
+        // diag right
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+        aprime = rbnode_copy(grandparent);
+        tree->restructure_copies++;
+        bprime = parent;
+        cprime = node;
+#else
+        aprime = grandparent;
+        bprime = parent;
+        cprime = node;
+#endif
+        aprime->right = bprime->left;
+        if (bprime->left != NULL) bprime->left->parent = aprime;
+
+        rcu_assign_pointer(bprime->left, aprime);
+        aprime->parent = bprime;
+
+        if (greatgrandparent != NULL)
+        {
+            if (left) {
+                rcu_assign_pointer(greatgrandparent->left, bprime);
+            } else {
+                rcu_assign_pointer(greatgrandparent->right, bprime);
+            }
+
+            bprime->parent = greatgrandparent;
+        } else {
+            bprime->parent = NULL;
+            rcu_assign_pointer(tree->root, bprime);
+        }
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+        rcu_free(tree->lock, rbnode_free, grandparent);
+#endif
+    }
+    else
+    {
+        // zig right
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+        aprime = rbnode_copy(grandparent);
+        cprime = rbnode_copy(parent);
+        bprime = node;
+        tree->restructure_multi_copies++;
+
+        aprime->right = cprime;
+        cprime->parent = aprime;
+        cprime->left = bprime;
+        bprime->parent = cprime;
+#else
+        aprime = grandparent;
+        bprime = node;
+        cprime = parent;
+#endif
+        aprime->right = bprime->left;
+        if (bprime->left != NULL) bprime->left->parent = aprime;
+
+        cprime->left = bprime->right;
+        if (bprime->right != NULL) bprime->right->parent = cprime;
+
+        rcu_assign_pointer(bprime->left, aprime);
+        aprime->parent = bprime;
+
+        bprime->right = cprime;
+        cprime->parent = bprime;
+
+        if (greatgrandparent != NULL)
+        {
+            if (left) {
+                rcu_assign_pointer(greatgrandparent->left, bprime);
+            } else {
+                rcu_assign_pointer(greatgrandparent->right, bprime);
+            }
+
+            bprime->parent = greatgrandparent;
+        } else {
+            bprime->parent = NULL;
+            rcu_assign_pointer(tree->root, bprime);
+        }
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+        rcu_free(tree->lock, rbnode_free, parent);
+        rcu_free(tree->lock, rbnode_free, grandparent);
+#endif
+        if (aprime->right == NULL) close_up(tree, aprime);
+        if (cprime->left == NULL) close_up(tree, cprime);
+    }
+
+    *a = bprime->left;
+    *b = bprime;
+    *c = bprime->right;
+}
+//*********************
+static void old_restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
                         rbnode_t **a, rbnode_t **b, rbnode_t **c)
 {
 #ifdef RCU
