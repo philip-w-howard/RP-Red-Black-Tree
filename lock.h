@@ -29,7 +29,8 @@ void rw_unlock(void *lock);
 #define rw_unlock read_unlock
 #endif
 
-unsigned long long *get_thread_stats(unsigned long long n_reads,
+unsigned long long *get_thread_stats(
+        unsigned long long n_reads,   unsigned long long n_read_fails,
         unsigned long long n_inserts, unsigned long long n_insert_fails,
         unsigned long long n_deletes, unsigned long long n_delete_fails);
 

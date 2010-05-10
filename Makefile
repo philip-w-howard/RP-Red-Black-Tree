@@ -7,13 +7,15 @@ endif
 
 URCUFLAGS = -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE
 RCUFLAGS = -DRCU
-AVLFLAGS = -DRCU -DMULTIWRITERS -DRCU_USE_MUTEX
+MULTIFLAGS = -DMULTIWRITERS
+AVLFLAGS = $(RCUFLAGS) $(MULTIFLAGS) -DRCU_USE_MUTEX
 CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) # -O1 -pg 
 LFLAGS = -lrt $(CFLAGS)
+FGFLAGS = -DFG_LOCK
 
 CC = gcc
 
-TARGETS = rb_rwl_write rb_rwl_read rb_rcu rbl_rcu ngp rb_lock rb_nolock ccavl parse # rcutest rb_fg # rb_urcu urcutest 
+TARGETS = rcumulti fgl rb_rwl_write rb_rwl_read rb_rcu rbl_rcu ngp rb_lock rb_nolock ccavl parse # rcutest rb_fg # rb_urcu urcutest 
 all: $(TARGETS)
 
 stuff: aotest
@@ -49,6 +51,12 @@ ccavl: avlmain.c ccavl.c avl.h rcu.c
 	$(CC) -c ccavl.c $(CFLAGS) $(AVLFLAGS)
 	$(CC) -o ccavl $(LFLAGS) avlmain.c ccavl.o rcu.o $(AVLFLAGS)
 
+fgl: rbmain.c rbnode.c rblfgtree.c rcu.c
+	$(CC) -c rbnode.c $(CFLAGS) $(FGFLAGS)
+	$(CC) -c rblfgtree.c $(CFLAGS) $(FGFLAGS)
+	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) $(FGFLAGS)
+	$(CC) -o fgl $(LFLAGS) $(FGFLAGS) rbmain.c rblfgtree.o rbnode.o rcu.o 
+
 rb_fg: rbmain.c rbnode_fg.c rbtree_fg.c rwl_write.o
 	$(CC) -c rbnode_fg.c $(CFLAGS) 
 	$(CC) -c rbtree_fg.c $(CFLAGS) 
@@ -65,16 +73,22 @@ rb_rwl_read: rbmain.c rbnode.c rbtree.c rwl_read.o
 	$(CC) -o rb_rwl_read $(LFLAGS) rbmain.c $(objects) rwl_read.o
 
 rbl_rcu: rbmain.c rbnode.c rbltree.c rcu.c
-	$(CC) -c rbnode.c $(CFLAGS) 
-	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) 
-	$(CC) -c rbltree.c $(CFLAGS) $(RCUFLAGS) 
-	$(CC) -o rbl_rcu $(LFLAGS) rbmain.c $(RCUFLAGS) rbnode.o rbltree.o rcu.o
+	$(CC) -c rbnode.c $(CFLAGS) $(MULTIFLAGS)
+	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) $(MULTIFLAGS)
+	$(CC) -c rbltree.c $(CFLAGS) $(RCUFLAGS) $(MULTIFLAGS)
+	$(CC) -o rbl_rcu $(LFLAGS) rbmain.c $(RCUFLAGS) rbnode.o rbltree.o rcu.o $(MULTIFLAGS)
 
 ngp: rbmain.c rbnode.c rbtree.c rcu.c
 	$(CC) -c rbnode.c $(CFLAGS) 
 	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) 
 	$(CC) -c rbtree.c $(CFLAGS) -DNO_GRACE_PERIOD
 	$(CC) -o ngp $(LFLAGS) rbmain.c $(RCUFLAGS) rbnode.o rbtree.o rcu.o
+
+rcumulti: rbmain.c rbnode.c rbtree.c rcu.c
+	$(CC) -c rbnode.c $(CFLAGS) $(RCUFLAGS) $(MULTIFLAGS)
+	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) $(MULTIFLAGS)
+	$(CC) -c rbtree.c $(CFLAGS) $(RCUFLAGS) $(MULTIFLAGS)
+	$(CC) -o rcumulti $(LFLAGS) rbmain.c $(RCUFLAGS) $(MULTIFLAGS) $(objects) rcu.o
 
 rb_rcu: rbmain.c rbnode.c rbtree.c rcu.c
 	$(CC) -c rbnode.c $(CFLAGS) 

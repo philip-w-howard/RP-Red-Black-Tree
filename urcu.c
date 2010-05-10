@@ -50,13 +50,15 @@ typedef struct
 
 //**********************************************
 unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
-        unsigned long long c, unsigned long long d, unsigned long long e)
+        unsigned long long c, unsigned long long d, unsigned long long e,
+        unsigned long long f)
 {
     Thread_Stats[1] = a;
     Thread_Stats[2] = b;
     Thread_Stats[3] = c;
     Thread_Stats[4] = d;
     Thread_Stats[5] = e;
+    Thread_Stats[6] = f;
 
     return Thread_Stats;
 }

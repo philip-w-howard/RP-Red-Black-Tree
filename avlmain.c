@@ -219,79 +219,6 @@ void set_affinity(int cpu_number)
 }
 #endif
 
-void *locktest_thread(void *arg)
-{
-    static AO_t Read_Flag = 0;
-    static AO_t Write_Flag = 0;
-
-    AO_t flag;
-
-    thread_data_t *thread_data = (thread_data_t *)arg;
-    //int update_percent = thread_data->update_percent;
-    int thread_index = thread_data->thread_index;
-
-    unsigned long long n_read_blank = 0;
-    unsigned long long n_read_read = 0;
-    unsigned long long n_read_write = 0;
-    unsigned long long n_write_blank = 0;
-    unsigned long long n_write_read = 0;
-    unsigned long long n_write_write = 0;
-
-    set_affinity(thread_index);
-    lock_thread_init(thread_data->lock, thread_index);
-    lock_mb();
-
-	while (goflag == GOFLAG_INIT)
-		poll(NULL, 0, 10);
-
-    switch (thread_data->mode)
-    {
-        case MODE_TRAVERSE:
-        case MODE_READONLY:
-            while (goflag == GOFLAG_RUN) 
-            {
-                read_lock(thread_data->lock);
-                flag = AO_fetch_and_add_full(&Read_Flag, 1);
-                if (flag==0) 
-                    n_read_blank++;
-                else
-                    n_read_read++;
-                flag = AO_load(&Write_Flag);
-                if (flag) n_read_write++;
-
-                waste_time();
-
-                AO_fetch_and_add_full(&Read_Flag, -1);
-                read_unlock(thread_data->lock);
-            }
-            break;
-        case MODE_WRITE:
-            while (goflag == GOFLAG_RUN) 
-            {
-                write_lock(thread_data->lock);
-                flag = AO_fetch_and_add_full(&Write_Flag, 1);
-                if (flag==0) 
-                    n_write_blank++;
-                else
-                    n_write_write++;
-
-                flag = AO_load(&Read_Flag);
-                if (flag) n_write_read++;
-
-                waste_time();
-
-                AO_fetch_and_add_full(&Write_Flag, -1);
-                write_unlock(thread_data->lock);
-            }
-            break;
-    }
-
-    lock_thread_close(thread_data->lock, thread_index);
-
-    return get_thread_stats(n_read_blank, n_read_read, n_read_write, 
-            n_write_blank, n_write_read);
-}
-
 static void *rcu_thread(void *arg)
 {
     thread_data_t *thread_data = (thread_data_t *)arg;
@@ -315,7 +242,7 @@ static void *rcu_thread(void *arg)
         poll(NULL, 0, 10);
     }
 
-    return get_thread_stats(0, 0, 0, 0, 0);
+    return get_thread_stats(0, 0, 0, 0, 0, 0);
 }
 void *perftest_thread(void *arg)
 {
@@ -329,6 +256,7 @@ void *perftest_thread(void *arg)
     long key=0;
 
     unsigned long long n_reads = 0;
+    unsigned long long n_read_fails = 0;
     unsigned long long n_inserts = 0;
     unsigned long long n_insert_fails = 0;
     unsigned long long n_deletes = 0;
@@ -369,8 +297,10 @@ void *perftest_thread(void *arg)
                         //avl_output(&My_Tree);
                         goflag = GOFLAG_STOP;
                         write_unlock(My_Tree.lock);
-                        return get_thread_stats(n_reads, n_inserts, n_insert_fails, 
-                            n_deletes, n_delete_fails);
+                        return get_thread_stats(
+                                n_reads, n_read_fails,
+                                n_inserts, n_insert_fails, 
+                                n_deletes, n_delete_fails);
                     }
                 }
                 assert(key == Params.scale + 1);
@@ -401,8 +331,10 @@ void *perftest_thread(void *arg)
                         //avl_output(&My_Tree);
                         goflag = GOFLAG_STOP;
                         rw_unlock(My_Tree.lock);
-                        return get_thread_stats(n_reads, n_inserts, n_insert_fails, 
-                            n_deletes, n_delete_fails);
+                        return get_thread_stats(
+                                n_reads, n_read_fails,
+                                n_inserts, n_insert_fails, 
+                                n_deletes, n_delete_fails);
                     }
                 }
 
@@ -448,7 +380,9 @@ void *perftest_thread(void *arg)
 
     lock_thread_close(thread_data->lock, thread_index);
 
-    return get_thread_stats(n_reads, n_inserts, n_insert_fails, 
+    return get_thread_stats(
+            n_reads, n_read_fails,
+            n_inserts, n_insert_fails, 
             n_deletes, n_delete_fails);
 }
 
@@ -617,8 +551,6 @@ int main(int argc, char *argv[])
 	goflag = GOFLAG_STOP;
 	lock_mb();
 
-    printf("post tree size: %d\n", avl_size(&My_Tree));
-
 	for (ii = 0; ii < Params.readers+Params.writers; ii++)
     {
         pthread_join(thread_data[ii].thread_id, &vstats);
@@ -632,6 +564,9 @@ int main(int argc, char *argv[])
         }
         printf("\n");
     }
+
+    printf("post tree size: %d\n", avl_size(&My_Tree));
+
 	printf("n_reads: ");
     for (jj=1; jj<9; jj++)
     {

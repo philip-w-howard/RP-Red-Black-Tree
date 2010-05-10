@@ -38,7 +38,11 @@ static int is_left(rbnode_t *node)
 //*******************************
 void rb_create(rbtree_t *tree, void *lock)
 {
+#ifdef MULTIWRITERS
+    read_lock(lock);
+#else
     write_lock(lock);
+#endif
     tree->root = NULL;
     tree->restructure_copies = 0;
     tree->restructure_multi_copies = 0;
@@ -46,7 +50,11 @@ void rb_create(rbtree_t *tree, void *lock)
     tree->restructures = 0;
     tree->grace_periods = 0;
     tree->lock = lock;
+#ifdef MULTIWRITERS
+    read_unlock(lock);
+#else
     write_unlock(lock);
+#endif
 }
 //*******************************
 static rbnode_t *find_node(rbtree_t *tree, long key)
@@ -469,17 +477,25 @@ int rb_insert(rbtree_t *tree, long key, void *value)
     rbnode_t *new_node;
 
     //printf("rb_insert write_lock\n");
+#ifdef MULTIWRITERS
+    read_lock(tree->lock);
+#else
     write_lock(tree->lock);
-
-    new_node = rbnode_create(key, value);
+#endif
 
     //check_for(tree->root, new_node);
 
 	if (tree->root == NULL)
 	{
+        new_node = rbnode_create(key, value);
+
         new_node->color = BLACK;
 		rcu_assign_pointer(tree->root, new_node);
+#ifdef MULTIWRITERS
+        read_unlock(tree->lock);
+#else
         write_unlock(tree->lock);
+#endif
         return 1;
 	} else {
 		rbnode_t *node = tree->root;
@@ -490,8 +506,11 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 			prev = node;
             if (key == node->key)
             {
-                rbnode_free(new_node);
+#ifdef MULTIWRITERS
+                read_unlock(tree->lock);
+#else
                 write_unlock(tree->lock);
+#endif
                 return 0;
             }
             else if (key <= node->key) 
@@ -499,6 +518,8 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 			else 
 				node = node->right;
 		}
+
+        new_node = rbnode_create(key, value);
 
         new_node->color = RED;
         new_node->parent = prev;
@@ -512,7 +533,11 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 	}
 
     //printf("rb_insert write_unlock\n");
+#ifdef MULTIWRITERS
+    read_unlock(tree->lock);
+#else
     write_unlock(tree->lock);
+#endif
 
     return 1;
 }
@@ -630,7 +655,11 @@ void *rb_remove(rbtree_t *tree, long key)
 	void *value = NULL;
     int temp_color;
 
+#ifdef MULTIWRITERS
+    read_lock(tree->lock);
+#else
     write_lock(tree->lock);
+#endif
 
 	node = find_node(tree, key);
 
@@ -638,7 +667,11 @@ void *rb_remove(rbtree_t *tree, long key)
 	if (node == NULL) 
     {
         //printf("rb_remove not found write_unlock\n");
+#ifdef MULTIWRITERS
+        read_unlock(tree->lock);
+#else
         write_unlock(tree->lock);
+#endif
         return NULL;
     }
 
@@ -791,7 +824,11 @@ void *rb_remove(rbtree_t *tree, long key)
     rcu_free(tree->lock, rbnode_free, node);
 
     //printf("rb_remove write_unlock\n");
+#ifdef MULTIWRITERS
+    read_unlock(tree->lock);
+#else
     write_unlock(tree->lock);
+#endif
 	return value;
 }
 //***************************************
@@ -1088,4 +1125,20 @@ void check_for(rbnode_t *node, rbnode_t *new_node)
 
     check_for(node->left, new_node);
     check_for(node->right, new_node);
+}
+//****************************************
+static int rbn_size(rbnode_t *node)
+{
+    int size = 0;
+    if (node == NULL) return 0;
+    size = 1;
+    size += rbn_size(node->left);
+    size += rbn_size(node->right);
+
+    return size;
+}
+//****************************************
+int rb_size(rbtree_t *tree)
+{
+    return rbn_size(tree->root);
 }

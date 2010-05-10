@@ -4,6 +4,9 @@
 #include <memory.h>
 
 #include "rbnode.h"
+#ifdef FG_LOCK
+#include "lock.h"
+#endif
 
 #define STACK_SIZE      20
 
@@ -34,6 +37,9 @@ static void *rb_alloc()
     {
         ptr = (extended_node_t *)malloc(sizeof(extended_node_t));
         assert(ptr != NULL);
+#ifdef FG_LOCK
+        ptr->node.lock = NULL;
+#endif
     }
 
     ptr->band1 = 0x0BADBAD0;
@@ -71,6 +77,9 @@ void rbnode_free(void *ptr)
     else
 #endif
     {
+#ifdef FG_LOCK
+        if (eptr->node.lock != NULL) free(eptr->node.lock);
+#endif
         free(eptr);
     }
 }
@@ -86,6 +95,10 @@ rbnode_t *rbnode_create(long key, void *value)
     node->parent = NULL;
 	node->index = Index++;
 
+#ifdef FG_LOCK
+    if (node->lock == NULL) node->lock = lock_init();
+#endif
+
 	return node;
 }
 //***********************************
@@ -97,6 +110,10 @@ rbnode_t *rbnode_copy(rbnode_t *node)
 
 	if (node->left  != NULL) node->left->parent  = newnode;
 	if (node->right != NULL) node->right->parent = newnode;
+
+#ifdef FG_LOCK
+    newnode->lock = lock_init();
+#endif
 
 	return newnode;
 }
@@ -121,3 +138,4 @@ int rbnode_invalid(rbnode_t *node, int depth)
 
     return 0;
 }
+

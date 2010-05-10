@@ -78,13 +78,15 @@ static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
         epoch_list_t *Thread_Epoch;
 //**********************************************
 unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
-        unsigned long long c, unsigned long long d, unsigned long long e)
+        unsigned long long c, unsigned long long d, unsigned long long e,
+        unsigned long long f)
 {
     Thread_Stats[1] = a;
     Thread_Stats[2] = b;
     Thread_Stats[3] = c;
     Thread_Stats[4] = d;
     Thread_Stats[5] = e;
+    Thread_Stats[6] = f;
 
     return Thread_Stats;
 }
@@ -372,6 +374,7 @@ void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
     while (rcu_lock->block.head >= RCU_MAX_BLOCKS)
     {
         write_unlock(lock);
+        //assert( (rcu_lock->reader_count_and_flag & 0x0001) == 0);
         // wait for polling thread to free memory
         lock_mb();
 

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "rbnode.h"
 #include "avl.h"
 #include "lock.h"
 #include "rcu.h"

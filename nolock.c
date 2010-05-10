@@ -3,7 +3,7 @@
 
 #include "lock.h"
 
-#define NSTATS      7
+#define NSTATS      9
 #define STAT_READ   6
 #define STAT_WRITE  7
 #define STAT_RSPIN  8
@@ -14,13 +14,15 @@ static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
 
 //**********************************************
 unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
-        unsigned long long c, unsigned long long d, unsigned long long e)
+        unsigned long long c, unsigned long long d, unsigned long long e,
+        unsigned long long f)
 {
     Thread_Stats[1] = a;
     Thread_Stats[2] = b;
     Thread_Stats[3] = c;
     Thread_Stats[4] = d;
     Thread_Stats[5] = e;
+    Thread_Stats[6] = f;
 
     return Thread_Stats;
 }
