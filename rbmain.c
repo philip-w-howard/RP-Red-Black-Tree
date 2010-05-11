@@ -190,6 +190,15 @@ void init_tree_data(int count, void *lock)
         //printf("Insert %ld\n", value);
         //rb_output(&My_Tree);
         Values[ii] = value;
+
+        /*
+        if (!rb_valid(&My_Tree)) 
+        {
+            rb_output_list(&My_Tree);
+            fprintf(stderr, "Invalid tree\n");
+            exit(-1);
+        }
+        */
     }
 }
 
@@ -538,6 +547,7 @@ void parse_args(int argc, char *argv[])
             case 'p':
                 Params.poll_rcu = atoi(value);
                 if (Params.poll_rcu == 0) usage(argc, argv, argv[ii]);
+                break;
             case 'r':
                 Params.readers = atoi(value);
                 if (Params.readers < 0) usage(argc, argv, argv[ii]);
@@ -681,7 +691,14 @@ int main(int argc, char *argv[])
             My_Tree.restructure_copies, My_Tree.restructure_multi_copies, 
             My_Tree.swap_copies, My_Tree.restructures, 
             My_Tree.grace_periods); 
-    if (!rb_valid(&My_Tree)) rb_output_list(&My_Tree);
+    if (!rb_valid(&My_Tree)) 
+    {
+        printf("******* INVALID TREE **********\n");
+        printf("******* INVALID TREE **********\n");
+        printf("******* INVALID TREE **********\n");
+        printf("******* INVALID TREE **********\n");
+        rb_output_list(&My_Tree);
+    }
 
     return 0;
 }

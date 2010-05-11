@@ -1,21 +1,18 @@
 
-ifndef __sparc__
 ARCHFLAGS = -pthread -g
-else
-ARCHFLAGS = -Wa,-xarch=v8plus
-endif
+#ARCHFLAGS = -Wa,-xarch=v8plus
 
 URCUFLAGS = -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE
+FGFLAGS = -DFG_LOCK
 RCUFLAGS = -DRCU
 MULTIFLAGS = -DMULTIWRITERS
-AVLFLAGS = $(RCUFLAGS) $(MULTIFLAGS) -DRCU_USE_MUTEX
+AVLFLAGS = $(RCUFLAGS) $(MULTIFLAGS) -DRCU_USE_MUTEX $(FGFLAGS)
 CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) # -O1 -pg 
 LFLAGS = -lrt $(CFLAGS)
-FGFLAGS = -DFG_LOCK
 
 CC = gcc
 
-TARGETS = rcumulti fgl rb_rwl_write rb_rwl_read rb_rcu rbl_rcu ngp rb_lock rb_nolock ccavl parse # rcutest rb_fg # rb_urcu urcutest 
+TARGETS = rcumulti fgl rb_rwl_write rb_rwl_read rb_rcu rbl_rcu ngp rb_lock rb_nolock ccavl rpavl parse # rcutest rb_fg # rb_urcu urcutest 
 all: $(TARGETS)
 
 stuff: aotest
@@ -46,10 +43,17 @@ rcu.o: rcu.c
 urcu.o: urcu.c 
 	$(CC) -c urcu.c $(CFLAGS) $(URCUFLAGS)
 
-ccavl: avlmain.c ccavl.c avl.h rcu.c
+rpavl: rbmain.c rpavl.c avl.h rcu.c
+	$(CC) -c rbnode.c $(CFLAGS) $(RCUFLAGS)
+	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS)
+	$(CC) -c rpavl.c $(CFLAGS) $(RCUFLAGS)
+	$(CC) -o rpavl $(LFLAGS) rbmain.c rbnode.o rpavl.o rcu.o $(RCUFLAGS)
+
+ccavl: rbmain.c ccavl.c avl.h rcu.c
+	$(CC) -c rbnode.c $(CFLAGS) $(AVLFLAGS)
 	$(CC) -c rcu.c $(CFLAGS) $(AVLFLAGS)
 	$(CC) -c ccavl.c $(CFLAGS) $(AVLFLAGS)
-	$(CC) -o ccavl $(LFLAGS) avlmain.c ccavl.o rcu.o $(AVLFLAGS)
+	$(CC) -o ccavl $(LFLAGS) rbmain.c rbnode.o ccavl.o rcu.o $(AVLFLAGS)
 
 fgl: rbmain.c rbnode.c rblfgtree.c rcu.c
 	$(CC) -c rbnode.c $(CFLAGS) $(FGFLAGS)

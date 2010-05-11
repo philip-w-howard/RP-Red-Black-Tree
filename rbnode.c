@@ -22,10 +22,20 @@ static unsigned long Index = 0;
 static void *Block[STACK_SIZE];
 static int Top = 0;
 #endif
+
+#ifdef MULTIWRITERS
+#include <pthread.h>
+static pthread_mutex_t Alloc_Lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
+
 //***********************************
 static void *rb_alloc()
 {
     extended_node_t *ptr;
+
+#ifdef MULTIWRITERS
+    pthread_mutex_lock(&Alloc_Lock);
+#endif
 
 #ifndef URCU
     if (Top != 0) 
@@ -45,6 +55,10 @@ static void *rb_alloc()
     ptr->band1 = 0x0BADBAD0;
     ptr->band2 = 0x0DABDAB0;
 
+#ifdef MULTIWRITERS
+    pthread_mutex_unlock(&Alloc_Lock);
+#endif
+
     //printf("rb_alloc %p\n", ptr);
     return &(ptr->node);
 }
@@ -54,6 +68,10 @@ void rbnode_free(void *ptr)
     //int ii;
     extended_node_t *eptr;
     long long *sptr;
+
+#ifdef MULTIWRITERS
+    pthread_mutex_lock(&Alloc_Lock);
+#endif
 
     sptr = (long long *)ptr;
     eptr = (extended_node_t *)&sptr[-1];
@@ -82,6 +100,10 @@ void rbnode_free(void *ptr)
 #endif
         free(eptr);
     }
+
+#ifdef MULTIWRITERS
+    pthread_mutex_unlock(&Alloc_Lock);
+#endif
 }
 //***********************************
 rbnode_t *rbnode_create(long key, void *value)
@@ -98,6 +120,9 @@ rbnode_t *rbnode_create(long key, void *value)
 #ifdef FG_LOCK
     if (node->lock == NULL) node->lock = lock_init();
 #endif
+
+    node->height = 1;
+    node->changeOVL = 0;
 
 	return node;
 }
@@ -129,6 +154,10 @@ int rbnode_invalid(rbnode_t *node, int depth)
     if (node->right != NULL && node->key > node->right->key) return 3;
     if (node->left  != NULL && node->left->parent != node)   return 4;
     if (node->right != NULL && node->right->parent != node)  return 5;
+
+    //if (ABS(height(hode->left) = height(node->right)) > 1) return 6;
+    //if (node->height != 1+MAX(height(node->left), height(node->right))) return 7;
+    //if (node->changeOVL & 0x07LL) return 8;
 
     sptr = (long long *)node;
     eptr = (extended_node_t *)&sptr[-1];

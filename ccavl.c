@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "rbnode.h"
-#include "avl.h"
+#include "rbtree.h"
 #include "lock.h"
 #include "rcu.h"
 
@@ -19,89 +19,23 @@
 // rather than the node lock.
 //***********************************************
 #ifdef __sparc__
-static avl_node_t *My_Tree;
+static rbtree_t *My_Tree;
 #warning "NEED __thread TO MAKE THIS WORK"
 #else
-static __thread avl_node_t *My_Tree;
+static __thread rbtree_t *My_Tree;
 #endif
-
-#define STACK_SIZE      20
-
-typedef struct
-{
-    long long band1;
-    avl_node_t node;
-    long long band2;
-} extended_node_t;
-
-static void *Block[STACK_SIZE+1];
-static int Top = 0;
-static pthread_mutex_t Alloc_Lock = PTHREAD_MUTEX_INITIALIZER;
-//***********************************
-static void *avl_alloc()
-{
-    extended_node_t *ptr;
-
-    pthread_mutex_lock(&Alloc_Lock);
-    if (Top != 0) 
-    {
-        ptr = Block[--Top];
-        //printf("dequeueing %p\n", ptr);
-    }
-    else
-    {
-        ptr = (extended_node_t *)malloc(sizeof(extended_node_t));
-        //printf("avl_alloc %p\n", ptr);
-        assert(ptr != NULL);
-        ptr->node.lock = NULL;
-    }
-
-    ptr->band1 = 0x0BADBAD0;
-    ptr->band2 = 0x0DABDAB0;
-
-    pthread_mutex_unlock(&Alloc_Lock);
-
-    return &(ptr->node);
-}
-//***********************************
-void avl_free(void *ptr)
-{
-    extended_node_t *eptr;
-    long long *sptr;
-
-    pthread_mutex_lock(&Alloc_Lock);
-
-    sptr = (long long *)ptr;
-    eptr = (extended_node_t *)&sptr[-1];
-    assert(eptr->band1 == 0x0BADBAD0);
-    assert(eptr->band2 == 0x0DABDAB0);
-
-    if (Top < STACK_SIZE)
-    {
-        //printf("Queuing %p at %d\n", eptr, Top);
-        Block[Top++] = eptr;
-    }
-    else
-    {
-        //printf("avl_free %p\n", eptr);
-        free(eptr->node.lock);
-        free(eptr);
-    }
-
-    pthread_mutex_unlock(&Alloc_Lock);
-}
 
     /** This is a special value that indicates the presence of a null value,
      *  to differentiate from the absence of a value.
      */
-static avl_node_t t_SpecialNull;
-static avl_node_t *SpecialNull = &t_SpecialNull;
+static rbnode_t t_SpecialNull;
+static rbnode_t *SpecialNull = &t_SpecialNull;
 
     /** This is a special value that indicates that an optimistic read
      *  failed.
      */
-static avl_node_t t_SpecialRetry;
-static avl_node_t *SpecialRetry = &t_SpecialRetry;
+static rbnode_t t_SpecialRetry;
+static rbnode_t *SpecialRetry = &t_SpecialRetry;
 
     /** The number of spins before yielding. */
 #define SPIN_COUNT 100
@@ -185,35 +119,14 @@ static version_t endShrink(version_t ovl) {
       return ovl + (1L << OVLShrinkCountShift);
     }
 
-//*******************************************
-avl_node_t *create(long key, void *value, avl_node_t *parent) 
-{
-    avl_node_t *new_node = (avl_node_t *)avl_alloc();
-    assert(new_node != NULL);
-
-    new_node->key = key;
-    new_node->height = 1;
-    new_node->value = value;
-    new_node->changeOVL = 0;
-    new_node->parent = parent;
-    new_node->left = NULL;
-    new_node->right = NULL;
-    // if new_node isn't NULL, then we're recycling a node that already
-    // has a lock set up.
-    if (new_node->lock == NULL) new_node->lock = lock_init();
-
-    lock_mb();
-
-    return new_node;
-}
-
-static avl_node_t *get_child(avl_node_t *node, char dir) 
-    { return dir == LEFT ? (avl_node_t *)node->left : (avl_node_t *)node->right; }
-//static avl_node_t *childSibling(avl_node_t *node, char dir) 
-//    { return dir == LEFT ? (avl_node_t *)node->right : (avl_node_t *)node->left; }
+//***************************************************
+static rbnode_t *get_child(rbnode_t *node, char dir) 
+    { return dir == LEFT ? (rbnode_t *)node->left : (rbnode_t *)node->right; }
+//static rbnode_t *childSibling(rbnode_t *node, char dir) 
+//    { return dir == LEFT ? (rbnode_t *)node->right : (rbnode_t *)node->left; }
 
 // node should be locked
-static void setChild(avl_node_t *node, char dir, avl_node_t *new_node) {
+static void setChild(rbnode_t *node, char dir, rbnode_t *new_node) {
             if (dir == LEFT) {
                 node->left = new_node;
             } else {
@@ -222,7 +135,7 @@ static void setChild(avl_node_t *node, char dir, avl_node_t *new_node) {
         }
 
 //////// per-node blocking
-static void waitUntilChangeCompleted(avl_node_t *node, version_t ovl) {
+static void waitUntilChangeCompleted(rbnode_t *node, version_t ovl) {
             int tries;
 
             if (!isChanging(ovl)) {
@@ -254,7 +167,7 @@ static void waitUntilChangeCompleted(avl_node_t *node, version_t ovl) {
 
     //////// node access functions
 
-static int height(volatile avl_node_t *node) {
+static int height(volatile rbnode_t *node) {
         return node == NULL ? 0 : node->height;
     }
 
@@ -269,17 +182,17 @@ static void *encodeNull(void *v) {
 
 
     //////// search
-static void *attemptGet(long key, avl_node_t *node, char dirToC, version_t nodeOVL);
+static void *attemptGet(long key, rbnode_t *node, char dirToC, version_t nodeOVL);
 
     /** Returns either a value or SpecialNull, if present, or null, if absent. */
-static void *getImpl(avl_node_t *tree, long key) {
-    avl_node_t *right;
+static void *getImpl(rbnode_t *tree, long key) {
+    rbnode_t *right;
     version_t ovl;
     long rightCmp;
     void *vo;
 
         while (1) {
-            right = (avl_node_t *)tree->right;
+            right = (rbnode_t *)tree->right;
             if (right == NULL) {
                 return NULL;
             } else {
@@ -308,15 +221,15 @@ static void *getImpl(avl_node_t *tree, long key) {
 
 
 // return a value
-void *get(avl_node_t *tree, long key) {
+void *get(rbnode_t *tree, long key) {
         return decodeNull(getImpl(tree, key));
     }
 
 static void *attemptGet(long key,
-                 avl_node_t *node,
+                 rbnode_t *node,
                  char dirToC,
                  version_t nodeOVL) {
-    avl_node_t *child;
+    rbnode_t *child;
     long childCmp;
     version_t childOVL;
     void *vo;
@@ -337,7 +250,7 @@ static void *attemptGet(long key,
                 childCmp = key - child->key;
                 if (childCmp == 0) {
                     // how we got here is irrelevant
-                    return (avl_node_t *)child->value;
+                    return (rbnode_t *)child->value;
                 }
 
                 // child is non-null
@@ -379,10 +292,10 @@ static void *attemptGet(long key,
 /*
 static void *attemptExtreme(int returnType,
                             char dir,
-                            avl_node_t *node,
+                            rbnode_t *node,
                             version_t nodeOVL) {
         while (1) {
-            avl_node_t *child = (avl_node_t *)get_child(node, dir);
+            rbnode_t *child = (rbnode_t *)get_child(node, dir);
 
             if (child == NULL) {
                 // read of the value must be protected by the OVL, because we
@@ -437,9 +350,9 @@ static void *attemptExtreme(int returnType,
 
     // Returns a key if returnKey is true, a SimpleImmutableEntry otherwise. 
 
-static void *extreme(avl_node_t *tree, int returnType, char dir) {
+static void *extreme(rbnode_t *tree, int returnType, char dir) {
         while (1) {
-            avl_node_t *right = (avl_node_t *)tree->right;
+            rbnode_t *right = (rbnode_t *)tree->right;
             if (right == NULL) {
                 if (returnType == ReturnNode) {
                     return NULL;
@@ -464,20 +377,20 @@ static void *extreme(avl_node_t *tree, int returnType, char dir) {
         }
     }
 
-long firstKey(avl_node_t *tree) {
+long firstKey(rbnode_t *tree) {
         return (long) extreme(tree, ReturnKey, LEFT);
     }
 
-avl_node_t *firstEntry(avl_node_t *tree) {
-        return (avl_node_t *) extreme(tree, ReturnEntry, LEFT);
+rbnode_t *firstEntry(rbnode_t *tree) {
+        return (rbnode_t *) extreme(tree, ReturnEntry, LEFT);
     }
 
-long lastKey(avl_node_t *tree) {
+long lastKey(rbnode_t *tree) {
         return (long) extreme(tree, ReturnKey, RIGHT);
     }
 
-avl_node_t *lastEntry(avl_node_t *tree) {
-        return (avl_node_t *) extreme(tree, ReturnEntry, RIGHT);
+rbnode_t *lastEntry(rbnode_t *tree) {
+        return (rbnode_t *) extreme(tree, ReturnEntry, RIGHT);
     }
 */
 
@@ -490,13 +403,13 @@ avl_node_t *lastEntry(avl_node_t *tree) {
 #define UpdateIfPresent     2
 #define UpdateIfEq          3
 
-static void * update(avl_node_t *tree, long key, int func, void * expected, void * newValue);
+static void * update(rbnode_t *tree, long key, int func, void * expected, void * newValue);
 static void * attemptNodeUpdate(int func,
                          void * expected, void * newValue,
-                         avl_node_t *parent, avl_node_t *node);
-static avl_node_t *fixHeight_nl(avl_node_t *node);
-static void fixHeightAndRebalance(avl_node_t *node);
-static int attemptUnlink_nl(avl_node_t *parent, avl_node_t *node);
+                         rbnode_t *parent, rbnode_t *node);
+static rbnode_t *fixHeight_nl(rbnode_t *node);
+static void fixHeightAndRebalance(rbnode_t *node);
+static int attemptUnlink_nl(rbnode_t *parent, rbnode_t *node);
 
 static int shouldUpdate(int func, void *prev, void *expected) {
         switch (func) {
@@ -508,25 +421,33 @@ static int shouldUpdate(int func, void *prev, void *expected) {
     }
 
 // return previous value or NULL
-void *put(avl_node_t *tree, long key, void *value) {
+void *put(rbnode_t *tree, long key, void *value) {
         //return decodeNull(update(tree, key, UpdateAlways, NULL, encodeNull(value)));
         return decodeNull(update(tree, key, UpdateIfAbsent, NULL, encodeNull(value)));
     }
 /*
-static void *putIfAbsent(avl_node_t *tree, long key, void * value) {
+static void *putIfAbsent(rbnode_t *tree, long key, void * value) {
         return decodeNull(update(tree, key, UpdateIfAbsent, NULL, encodeNull(value)));
     }
 */
-static void * remove_node(avl_node_t *tree, long key) {
+static void * remove_node(rbnode_t *tree, long key) {
         return decodeNull(update(tree, key, UpdateAlways, NULL, NULL));
     }
 /*
-static int remove_value(avl_node_t *tree, long key, void * value) {
+static int remove_value(rbnode_t *tree, long key, void * value) {
         return update(tree, key, UpdateIfEq, encodeNull(value), NULL) == encodeNull(value);
     }
 */
+static rbnode_t *create(long key, void *value, rbnode_t*parent)
+{
+    rbnode_t *new_node = rbnode_create(key, value);
 
-static int attemptInsertIntoEmpty(avl_node_t *tree, long key, void * vOpt) {
+    new_node->parent = parent;
+
+    return new_node;
+}
+
+static int attemptInsertIntoEmpty(rbnode_t *tree, long key, void * vOpt) {
     write_lock(tree->lock);
             if (tree->right == NULL) {
                 tree->right = create(key, vOpt, tree);
@@ -548,8 +469,8 @@ static void * attemptUpdate(
                      int func,
                      void * expected,
                      void * newValue,
-                     avl_node_t *parent,
-                     avl_node_t *node,
+                     rbnode_t *parent,
+                     rbnode_t *node,
                      version_t nodeOVL) {
         // As the search progresses there is an implicit min and max assumed for the
         // branch of the tree rooted at node. A left rotation of a node x results in
@@ -574,7 +495,7 @@ static void * attemptUpdate(
         dirToC = cmp < 0 ? LEFT : RIGHT;
 
         while (1) {
-            avl_node_t *child = get_child(node, dirToC);
+            rbnode_t *child = get_child(node, dirToC);
 
             if (hasShrunkOrUnlinked(nodeOVL, node->changeOVL)) {
                 return SpecialRetry;
@@ -590,7 +511,7 @@ static void * attemptUpdate(
                 } else {
                     // Update will be an insert.
                     int success;
-                    avl_node_t *damaged;
+                    rbnode_t *damaged;
                     write_lock(node->lock);
                     {
                         // Validate that we haven't been affected by past
@@ -665,10 +586,10 @@ static void * attemptUpdate(
         }
     }
 
-static void * update(avl_node_t *tree, long key, int func, void *expected, void *newValue) {
+static void * update(rbnode_t *tree, long key, int func, void *expected, void *newValue) {
 
         while (1) {
-            avl_node_t *right = (avl_node_t *)tree->right;
+            rbnode_t *right = (rbnode_t *)tree->right;
             if (right == NULL) {
                 // key is not present
                 if (!shouldUpdate(func, NULL, expected) ||
@@ -701,8 +622,8 @@ static void * update(avl_node_t *tree, long key, int func, void *expected, void 
     void * attemptNodeUpdate( int func,
                               void * expected,
                               void * newValue,
-                              avl_node_t *parent,
-                              avl_node_t *node) {
+                              rbnode_t *parent,
+                              rbnode_t *node) {
         void *prev;
 
         if (newValue == NULL) {
@@ -715,7 +636,7 @@ static void * update(avl_node_t *tree, long key, int func, void *expected, void 
 
         if (newValue == NULL && (node->left == NULL || node->right == NULL)) {
             // potential unlink, get ready by locking the parent
-            avl_node_t *damaged;
+            rbnode_t *damaged;
             write_lock(parent->lock);
             {
                 if (isUnlinked(parent->changeOVL) || node->parent != parent) {
@@ -778,19 +699,19 @@ static void * update(avl_node_t *tree, long key, int func, void *expected, void 
     }
 
     /** Does not adjust the size or any heights. */
-int attemptUnlink_nl(avl_node_t *parent, avl_node_t *node) {
-        avl_node_t *parentL;
-        avl_node_t * parentR;
-        avl_node_t *left;
-        avl_node_t *right;
-        avl_node_t *splice;
+int attemptUnlink_nl(rbnode_t *parent, rbnode_t *node) {
+        rbnode_t *parentL;
+        rbnode_t * parentR;
+        rbnode_t *left;
+        rbnode_t *right;
+        rbnode_t *splice;
 
         // assert (Thread.holdsLock(parent));
         // assert (Thread.holdsLock(node));
         assert (!isUnlinked(parent->changeOVL));
 
-        parentL = (avl_node_t *)parent->left;
-        parentR = (avl_node_t *)parent->right;
+        parentL = (rbnode_t *)parent->left;
+        parentR = (rbnode_t *)parent->right;
         if (parentL != node && parentR != node) {
             // node is no longer a child of parent
             return 0;
@@ -799,8 +720,8 @@ int attemptUnlink_nl(avl_node_t *parent, avl_node_t *node) {
         assert (!isUnlinked(node->changeOVL));
         assert (parent == node->parent);
 
-        left = (avl_node_t *)node->left;
-        right = (avl_node_t *)node->right;
+        left = (rbnode_t *)node->left;
+        right = (rbnode_t *)node->right;
         if (left != NULL && right != NULL) {
             // splicing is no longer possible
             return 0;
@@ -831,36 +752,36 @@ int attemptUnlink_nl(avl_node_t *parent, avl_node_t *node) {
         //       My_Tree is a thread local variable that is set by the
         //       public interface on each method call
         //
-        rcu_free(My_Tree->lock, avl_free, node);
+        rcu_free(My_Tree->lock, rbnode_free, node);
 
         return 1;
     }
 
     //////////////// tree balance and height info repair
 
-static avl_node_t *rebalance_nl(avl_node_t *nParent, avl_node_t *n) ;
-static avl_node_t *rebalanceToRight_nl(avl_node_t *nParent, avl_node_t *n,
-                                       avl_node_t *nL, int hR0);
-static avl_node_t *rebalanceToLeft_nl(avl_node_t *nParent, avl_node_t *n,
-                                      avl_node_t *nL, int hR0);
-static avl_node_t *rotateRight_nl(avl_node_t *nParent, avl_node_t *n,
-                                  avl_node_t *nL, avl_node_t *nLR,
+static rbnode_t *rebalance_nl(rbnode_t *nParent, rbnode_t *n) ;
+static rbnode_t *rebalanceToRight_nl(rbnode_t *nParent, rbnode_t *n,
+                                       rbnode_t *nL, int hR0);
+static rbnode_t *rebalanceToLeft_nl(rbnode_t *nParent, rbnode_t *n,
+                                      rbnode_t *nL, int hR0);
+static rbnode_t *rotateRight_nl(rbnode_t *nParent, rbnode_t *n,
+                                  rbnode_t *nL, rbnode_t *nLR,
                                   int hR, int hLL, int hLR);
-static avl_node_t *rotateLeft_nl(avl_node_t *nParent, avl_node_t *n,
-                                 avl_node_t *nR, avl_node_t *nRL,
+static rbnode_t *rotateLeft_nl(rbnode_t *nParent, rbnode_t *n,
+                                 rbnode_t *nR, rbnode_t *nRL,
                                  int hL, int hRL, int hRR);
-static avl_node_t *rotateLeftOverRight_nl(avl_node_t *nParent, avl_node_t *n,
-                                          avl_node_t *nR, avl_node_t *nRL,
+static rbnode_t *rotateLeftOverRight_nl(rbnode_t *nParent, rbnode_t *n,
+                                          rbnode_t *nR, rbnode_t *nRL,
                                           int hL, int hRR, int hRLR);
-static avl_node_t *rotateRightOverLeft_nl(avl_node_t *nParent, avl_node_t *n,
-                                          avl_node_t *nL, avl_node_t *nLR,
+static rbnode_t *rotateRightOverLeft_nl(rbnode_t *nParent, rbnode_t *n,
+                                          rbnode_t *nL, rbnode_t *nLR,
                                           int hR, int hLL, int hLRL);
 
 #define UnlinkRequired          -1
 #define RebalanceRequired       -2
 #define NothingRequired         -3
 
-static int nodeCondition(avl_node_t *node) {
+static int nodeCondition(rbnode_t *node) {
         // Begin atomic.
 
         int hN;
@@ -868,8 +789,8 @@ static int nodeCondition(avl_node_t *node) {
         int hR0;
         int hNRepl;
         int bal;
-        avl_node_t *nL = (avl_node_t *)node->left;
-        avl_node_t *nR = (avl_node_t *)node->right;
+        rbnode_t *nL = (rbnode_t *)node->left;
+        rbnode_t *nR = (rbnode_t *)node->right;
 
         if ((nL == NULL || nR == NULL) && node->value== NULL) {
             return UnlinkRequired;
@@ -894,7 +815,7 @@ static int nodeCondition(avl_node_t *node) {
         return hN != hNRepl ? hNRepl : NothingRequired;
     }
 
-static void fixHeightAndRebalance(avl_node_t *node) {
+static void fixHeightAndRebalance(rbnode_t *node) {
         while (node != NULL && node->parent != NULL) {
             int condition = nodeCondition(node);
             if (condition == NothingRequired || isUnlinked(node->changeOVL)) {
@@ -903,7 +824,7 @@ static void fixHeightAndRebalance(avl_node_t *node) {
             }
 
             if (condition != UnlinkRequired && condition != RebalanceRequired) {
-                avl_node_t *new_node;
+                rbnode_t *new_node;
                 write_lock(node->lock);
                 {
                     new_node = fixHeight_nl(node);
@@ -911,11 +832,11 @@ static void fixHeightAndRebalance(avl_node_t *node) {
                 write_unlock(node->lock);
                 node = new_node;
             } else {
-                avl_node_t *nParent = (avl_node_t *)node->parent;
+                rbnode_t *nParent = (rbnode_t *)node->parent;
                 write_lock(nParent->lock);
                 {
                     if (!isUnlinked(nParent->changeOVL) && node->parent == nParent) {
-                        avl_node_t *new_node;
+                        rbnode_t *new_node;
                         write_lock(node->lock);
                         {
                             new_node = rebalance_nl(nParent, node);
@@ -934,7 +855,7 @@ static void fixHeightAndRebalance(avl_node_t *node) {
      *  lowest damaged node for which this thread is responsible.  Returns null
      *  if no more repairs are needed.
      */
-static avl_node_t *fixHeight_nl(avl_node_t *node) {
+static rbnode_t *fixHeight_nl(rbnode_t *node) {
         int c = nodeCondition(node);
         switch (c) {
             case RebalanceRequired:
@@ -947,23 +868,23 @@ static avl_node_t *fixHeight_nl(avl_node_t *node) {
             default:
                 node->height = c;
                 // we've damaged our parent, but we can't fix it now
-                return (avl_node_t *)node->parent;
+                return (rbnode_t *)node->parent;
         }
     }
 
     /** nParent and n must be locked on entry.  Returns a damaged node, or null
      *  if no more rebalancing is necessary.
      */
-static avl_node_t *rebalance_nl(avl_node_t *nParent, avl_node_t *n) {
+static rbnode_t *rebalance_nl(rbnode_t *nParent, rbnode_t *n) {
         int hN;
         int hL0;
         int hR0;
         int hNRepl;
         int bal;
 
-        avl_node_t *tainted;
-        avl_node_t *nL = (avl_node_t *)n->left;
-        avl_node_t *nR = (avl_node_t *)n->right;
+        rbnode_t *tainted;
+        rbnode_t *nL = (rbnode_t *)n->left;
+        rbnode_t *nR = (rbnode_t *)n->right;
 
         if ((nL == NULL || nR == NULL) && n->value == NULL) {
             if (attemptUnlink_nl(nParent, n)) {
@@ -1004,9 +925,9 @@ static avl_node_t *rebalance_nl(avl_node_t *nParent, avl_node_t *n) {
         }
     }
 
-static avl_node_t *rebalanceToRight_nl(avl_node_t *nParent, avl_node_t *n,
-                                       avl_node_t *nL, int hR0) {
-        avl_node_t *result;
+static rbnode_t *rebalanceToRight_nl(rbnode_t *nParent, rbnode_t *n,
+                                       rbnode_t *nL, int hR0) {
+        rbnode_t *result;
 
         // L is too large, we will rotate-right.  If L.R is taller
         // than L.L, then we will first rotate-left L.
@@ -1015,8 +936,8 @@ static avl_node_t *rebalanceToRight_nl(avl_node_t *nParent, avl_node_t *n,
             if (hL - hR0 <= 1) {
                 return n; // retry
             } else {
-                avl_node_t *nLR = (avl_node_t *)nL->right;
-                int hLL0 = height((avl_node_t *)nL->left);
+                rbnode_t *nLR = (rbnode_t *)nL->right;
+                int hLL0 = height((rbnode_t *)nL->left);
                 int hLR0 = height(nLR);
                 if (hLL0 >= hLR0) {
                     // rotate right based on our snapshot of hLR
@@ -1044,7 +965,7 @@ static avl_node_t *rebalanceToRight_nl(avl_node_t *nParent, avl_node_t *n,
                             // ancestry relationship.  The recursive call to
                             // rebalanceToRight_nl in this case occurs after we
                             // release the lock on nLR.
-                            int hLRL = height((avl_node_t *)nLR->left);
+                            int hLRL = height((rbnode_t *)nLR->left);
                             int b = hLL0 - hLRL;
                             if (b >= -1 && b <= 1) {
                                 // nParent.child.left won't be damaged after a double rotation
@@ -1064,20 +985,20 @@ static avl_node_t *rebalanceToRight_nl(avl_node_t *nParent, avl_node_t *n,
         }
     }
 
-static avl_node_t *rebalanceToLeft_nl(avl_node_t *nParent,
-                                      avl_node_t *n,
-                                      avl_node_t *nR,
+static rbnode_t *rebalanceToLeft_nl(rbnode_t *nParent,
+                                      rbnode_t *n,
+                                      rbnode_t *nR,
                                       int hL0) {
-        avl_node_t *result;
+        rbnode_t *result;
 
         {
             int hR = nR->height;
             if (hL0 - hR >= -1) {
                 return n; // retry
             } else {
-                avl_node_t *nRL = (avl_node_t *)nR->left;
+                rbnode_t *nRL = (rbnode_t *)nR->left;
                 int hRL0 = height(nRL);
-                int hRR0 = height((avl_node_t *)nR->right);
+                int hRR0 = height((rbnode_t *)nR->right);
                 if (hRR0 >= hRL0) {
                     if (nRL != NULL) write_lock(nRL->lock);
                     result = rotateLeft_nl(nParent, n, nR, nRL, hL0, hRL0, hRR0);
@@ -1092,7 +1013,7 @@ static avl_node_t *rebalanceToLeft_nl(avl_node_t *nParent,
                             write_unlock(nRL->lock);
                             return result;
                         } else {
-                            int hRLR = height((avl_node_t *)nRL->right);
+                            int hRLR = height((rbnode_t *)nRL->right);
                             int b = hRR0 - hRLR;
                             if (b >= -1 && b <= 1) {
                                 result = rotateLeftOverRight_nl(nParent, n, 
@@ -1110,10 +1031,10 @@ static avl_node_t *rebalanceToLeft_nl(avl_node_t *nParent,
         }
     }
 
-static avl_node_t *rotateRight_nl(avl_node_t *nParent,
-                                  avl_node_t *n,
-                                  avl_node_t *nL,
-                                  avl_node_t *nLR,
+static rbnode_t *rotateRight_nl(rbnode_t *nParent,
+                                  rbnode_t *n,
+                                  rbnode_t *nL,
+                                  rbnode_t *nLR,
                                   int hR,
                                   int hLL,
                                   int hLR) {
@@ -1123,7 +1044,7 @@ static avl_node_t *rotateRight_nl(avl_node_t *nParent,
         version_t nodeOVL = n->changeOVL;
         version_t leftOVL = nL->changeOVL;
         
-        avl_node_t *nPL = (avl_node_t *)nParent->left;
+        rbnode_t *nPL = (rbnode_t *)nParent->left;
 
         n->changeOVL = beginShrink(nodeOVL);
         nL->changeOVL = beginGrow(leftOVL);
@@ -1181,10 +1102,10 @@ static avl_node_t *rotateRight_nl(avl_node_t *nParent,
         return fixHeight_nl(nParent);
     }
 
-static avl_node_t *rotateLeft_nl(avl_node_t *nParent,
-                                 avl_node_t *n,
-                                 avl_node_t *nR,
-                                 avl_node_t *nRL,
+static rbnode_t *rotateLeft_nl(rbnode_t *nParent,
+                                 rbnode_t *n,
+                                 rbnode_t *nR,
+                                 rbnode_t *nRL,
                                  int hL,
                                  int hRL,
                                  int hRR) {
@@ -1194,7 +1115,7 @@ static avl_node_t *rotateLeft_nl(avl_node_t *nParent,
         version_t nodeOVL = n->changeOVL;
         version_t rightOVL = nR->changeOVL;
 
-        avl_node_t *nPL = (avl_node_t *)nParent->left;
+        rbnode_t *nPL = (rbnode_t *)nParent->left;
 
         n->changeOVL = beginShrink(nodeOVL);
         nR->changeOVL = beginGrow(rightOVL);
@@ -1236,10 +1157,10 @@ static avl_node_t *rotateLeft_nl(avl_node_t *nParent,
         return fixHeight_nl(nParent);
     }
 
-static avl_node_t *rotateRightOverLeft_nl(avl_node_t *nParent,
-                                          avl_node_t *n,
-                                          avl_node_t *nL,
-                                          avl_node_t *nLR,
+static rbnode_t *rotateRightOverLeft_nl(rbnode_t *nParent,
+                                          rbnode_t *n,
+                                          rbnode_t *nL,
+                                          rbnode_t *nLR,
                                           int hR,
                                           int hLL,
                                           int hLRL) {
@@ -1252,9 +1173,9 @@ static avl_node_t *rotateRightOverLeft_nl(avl_node_t *nParent,
         version_t leftOVL = nL->changeOVL;
         version_t leftROVL = nLR->changeOVL;
 
-        avl_node_t *nPL = (avl_node_t *)nParent->left;
-        avl_node_t *nLRL = (avl_node_t *)nLR->left;
-        avl_node_t *nLRR = (avl_node_t *)nLR->right;
+        rbnode_t *nPL = (rbnode_t *)nParent->left;
+        rbnode_t *nLRL = (rbnode_t *)nLR->left;
+        rbnode_t *nLRR = (rbnode_t *)nLR->right;
         int hLRR = height(nLRR);
 
         n->changeOVL = beginShrink(nodeOVL);
@@ -1321,10 +1242,10 @@ static avl_node_t *rotateRightOverLeft_nl(avl_node_t *nParent,
         return fixHeight_nl(nParent);
     }
 
-static avl_node_t *rotateLeftOverRight_nl(avl_node_t *nParent,
-                                          avl_node_t *n,
-                                          avl_node_t *nR,
-                                          avl_node_t *nRL,
+static rbnode_t *rotateLeftOverRight_nl(rbnode_t *nParent,
+                                          rbnode_t *n,
+                                          rbnode_t *nR,
+                                          rbnode_t *nRL,
                                           int hL,
                                           int hRR,
                                           int hRLR) {
@@ -1337,10 +1258,10 @@ static avl_node_t *rotateLeftOverRight_nl(avl_node_t *nParent,
         version_t rightOVL = nR->changeOVL;
         version_t rightLOVL = nRL->changeOVL;
 
-        avl_node_t *nPL = (avl_node_t *)nParent->left;
-        avl_node_t *nRLL = (avl_node_t *)nRL->left;
+        rbnode_t *nPL = (rbnode_t *)nParent->left;
+        rbnode_t *nRLL = (rbnode_t *)nRL->left;
         int hRLL = height(nRLL);
-        avl_node_t *nRLR = (avl_node_t *)nRL->right;
+        rbnode_t *nRLR = (rbnode_t *)nRL->right;
 
         n->changeOVL = beginShrink(nodeOVL);
         nR->changeOVL = beginShrink(rightOVL);
@@ -1394,19 +1315,18 @@ static avl_node_t *rotateLeftOverRight_nl(avl_node_t *nParent,
 //***********************************************
 // public interface
 //***********************************************
-void avl_create(avl_node_t *tree, void *lock)
+void rb_create(rbtree_t *tree, void *lock)
 {
-    tree->key = LONG_MIN;
-    tree->height = 0;
-    tree->value = NULL;
-    tree->changeOVL = 0;
-    tree->parent = NULL;
-    tree->left = NULL;
-    tree->right = NULL;
+    tree->root = create(LONG_MIN,NULL,NULL);
+    tree->restructure_copies = 0;
+    tree->restructure_multi_copies = 0;
+    tree->swap_copies = 0;
+    tree->restructures = 0;
+    tree->grace_periods = 0;
     tree->lock = lock;
 }
 //***********************************************
-void *avl_find(avl_node_t *tree, long key)
+void *rb_find(rbtree_t *tree, long key)
 {
     void *value;
 
@@ -1419,13 +1339,13 @@ void *avl_find(avl_node_t *tree, long key)
     //       for memory reclaimation purposes. These are the RCU calls,
     //       so they are non-blocking
     read_lock(tree->lock);
-    value = get(tree, key);
+    value = get(tree->root, key);
     read_unlock(tree->lock);
 
     return value;
 }
 //***********************************************
-int avl_insert(avl_node_t *tree, long key, void *value)
+int rb_insert(rbtree_t *tree, long key, void *value)
 {
     void *old_value;
     
@@ -1438,7 +1358,7 @@ int avl_insert(avl_node_t *tree, long key, void *value)
     //       for memory reclaimation purposes. These are the RCU calls,
     //       so they are non-blocking
     read_lock(tree->lock);
-    old_value = put(tree, key, value);
+    old_value = put(tree->root, key, value);
     read_unlock(tree->lock);
 
     if (old_value != NULL) return 0;
@@ -1447,7 +1367,7 @@ int avl_insert(avl_node_t *tree, long key, void *value)
     return 1;
 }
 //***********************************************
-void *avl_remove(avl_node_t *tree, long key)
+void *rb_remove(rbtree_t *tree, long key)
 {
     void *value;
     
@@ -1460,38 +1380,38 @@ void *avl_remove(avl_node_t *tree, long key)
     //       for memory reclaimation purposes. These are the RCU calls,
     //       so they are non-blocking
     read_lock(tree->lock);
-    value = remove_node(tree, key);
+    value = remove_node(tree->root, key);
     read_unlock(tree->lock);
 
     //if (value != NULL) printf("remove %ld\n", key);
     return value;
 }
 //***********************************************
-avl_node_t *avl_first_n(avl_node_t *tree)
+rbnode_t *rb_first_n(rbtree_t *tree)
 {
     assert(!IMPLEMENTED);
     return NULL;
 }
 //***********************************************
-void *avl_first(avl_node_t *tree, long *key)
+void *rb_first(rbtree_t *tree, long *key)
 {
     assert(!IMPLEMENTED);
     return NULL;
 }
 //***********************************************
-avl_node_t *avl_next_n(avl_node_t *node)
+rbnode_t *rb_next_n(rbnode_t *node)
 {
     assert(!IMPLEMENTED);
     return NULL;
 }
 //***********************************************
-void *avl_next(avl_node_t *tree, long prev_key, long *key)
+void *rb_next(rbtree_t *tree, long prev_key, long *key)
 {
     assert(!IMPLEMENTED);
     return NULL;
 }
 //**************************************
-static char *toString(volatile avl_node_t *node)
+static char *toString(volatile rbnode_t *node)
 {
     static char buff[100];
 
@@ -1506,7 +1426,7 @@ static char *toString(volatile avl_node_t *node)
     return buff;
 }
 //**************************************
-static int avl_node_invalid(volatile avl_node_t *node, int depth)
+static int rb_node_invalid(volatile rbnode_t *node, int depth)
 {
     if (node == NULL) return 0;
     
@@ -1517,7 +1437,7 @@ static int avl_node_invalid(volatile avl_node_t *node, int depth)
     return 0;
 }
 //**************************************
-static void output_list(volatile avl_node_t *node, int depth)
+static void output_list(volatile rbnode_t *node, int depth)
 {
     if (depth > 32)
     {
@@ -1531,9 +1451,9 @@ static void output_list(volatile avl_node_t *node, int depth)
         printf("depth: %d value: %s", depth, toString(node));
         printf(" L: %s", toString(node->left));
         printf(" R: %s", toString(node->right));
-        if (avl_node_invalid(node, depth)) 
+        if (rb_node_invalid(node, depth)) 
             printf(" INVALID NODE: %d %llX\n", 
-                    avl_node_invalid(node, depth), node->changeOVL);
+                    rb_node_invalid(node, depth), node->changeOVL);
         else
             printf("\n");
         output_list(node->right, depth+1);
@@ -1563,7 +1483,7 @@ static void o_resize()
     }
 }
 //**************************************
-static void output(volatile avl_node_t *node, int depth)
+static void output(volatile rbnode_t *node, int depth)
 {
     if (node == NULL) return;
 
@@ -1587,15 +1507,15 @@ static void output(volatile avl_node_t *node, int depth)
     output(node->right, depth+1);
 }
 //**************************************
-void avl_output_list(avl_node_t *tree)
+void rb_output_list(rbtree_t *tree)
 {
-    output_list(tree->right, 0);
+    output_list(tree->root->right, 0);
 }//**************************************
-void avl_output(avl_node_t *tree)
+void rb_output(rbtree_t *tree)
 {
     int ii;
 
-    output(tree->right, 0);
+    output(tree->root->right, 0);
 
     for (ii=0; ii<o_nrows; ii++)
     {
@@ -1609,13 +1529,13 @@ void avl_output(avl_node_t *tree)
 
 }
 //**************************************
-static int rec_invalid_node(volatile avl_node_t *node, int depth)
+static int rec_invalid_node(volatile rbnode_t *node, int depth)
 {
     int invalid;
 
     if (node == NULL) return 0;
 
-    invalid = avl_node_invalid(node, depth);
+    invalid = rb_node_invalid(node, depth);
     if (invalid) return invalid;
 
     invalid = rec_invalid_node(node->left, depth+1);
@@ -1627,12 +1547,12 @@ static int rec_invalid_node(volatile avl_node_t *node, int depth)
     return 0;
 }
 //***************************************
-int avl_valid(avl_node_t *tree)
+int rb_valid(rbtree_t *tree)
 {
-    return !rec_invalid_node(tree->right, 0);
+    return !rec_invalid_node(tree->root->right, 0);
 }
 //***************************************
-void check_for(volatile avl_node_t *node, volatile avl_node_t *new_node)
+void check_for(volatile rbnode_t *node, volatile rbnode_t *new_node)
 {
     if (node == NULL) return;
 
@@ -1642,13 +1562,18 @@ void check_for(volatile avl_node_t *node, volatile avl_node_t *new_node)
     check_for(node->right, new_node);
 }
 //**************************************
-int avl_size(avl_node_t *tree)
+static int my_size(rbnode_t *tree)
 {
     int size = 0;
     if (tree == NULL) return 0;
     if (tree->value != NULL) size++;
-    size += avl_size((avl_node_t *)tree->left);
-    size += avl_size((avl_node_t *)tree->right);
+    size += my_size((rbnode_t *)tree->left);
+    size += my_size((rbnode_t *)tree->right);
 
     return size;
+}
+//**************************************
+int rb_size(rbtree_t *tree)
+{
+    return my_size(tree->root);
 }
