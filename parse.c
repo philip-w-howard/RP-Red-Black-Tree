@@ -6,146 +6,220 @@ typedef unsigned long long count_t;
 
 typedef struct info_s
 {
-    char *test;
-    int  size;
-    int readers;
-    int writers;
     count_t reads;
     count_t writes;
     struct info_s *next;
 } info_t;
 
 #define MAX_TESTS 30
+#define MAX_SETUPS 500
 
-static void insert(info_t *dataset, char *test, int size, int readers, int writers,
-        count_t reads, count_t writes)
+static char *Tests[MAX_TESTS];
+static int Num_Tests = 0;
+static char *Setups[MAX_SETUPS];
+static int Num_Setups = 0;
+static info_t *Info[MAX_SETUPS][MAX_TESTS];
+
+char *Input_Filename = NULL;
+char *Output_Filename = NULL;
+int  Compute_Average = 0;
+
+static void init_data()
 {
-    int ii;
-    info_t *node;
+    int test, setup;
 
-    printf("insert %s %d %d %d\n", test, size, readers, writers);
-    for (ii=0; ii<MAX_TESTS; ii++)
+    for (test = 0; test<MAX_TESTS; test++)
     {
-        if (dataset[ii].test == NULL)
-        {
-            dataset[ii].test = (char *)malloc(strlen(test)+1);
-            strcpy( dataset[ii].test, test);
-            dataset[ii].size = size;
-            dataset[ii].readers = readers;
-            dataset[ii].writers = writers;
-            dataset[ii].reads = reads;
-            dataset[ii].writes = writes;
-            dataset[ii].next = NULL;
-
-            return;
-        } 
-        else if (strcmp( dataset[ii].test, test) == 0) 
-        {
-            node = (info_t *)malloc(sizeof(info_t));
-
-            node->test = NULL;
-            node->size = size;
-            node->readers = readers;
-            node->writers = writers;
-            node->reads = reads;
-            node->writes = writes;
-            node->next = dataset[ii].next;
-            dataset[ii].next = node;
-            
-            return;
-        }
+        Tests[test] = NULL;
     }
 
-    fprintf(stderr, "Too many test ID's\n");
+    for (setup=0; setup<MAX_SETUPS; setup++)
+    {
+        Setups[setup] = NULL;
+
+        for (test = 0; test<MAX_TESTS; test++)
+        {
+            Info[setup][test] = NULL;
+        }
+    }
+}
+
+static int find(char **list, int list_size, char *key)
+{
+    int ii;
+
+    for (ii=0; ii<list_size; ii++)
+    {
+        if (list[ii] == NULL)
+        {
+            list[ii] = (char *)malloc(strlen(key)+1);
+            strcpy(list[ii], key);
+            return ii;
+        }
+
+        if (strcmp(list[ii], key)==0) return ii;
+    }
+
+    fprintf(stderr, "Dataset overflow\n");
     exit(-1);
 }
 
-static void output(info_t *dataset)
+static void insert(char *test_name, int mode, int size, 
+        int readers, int writers,
+        count_t reads, count_t writes)
 {
-    int n_tests, ii;
-    int size;
-    int readers;
-    int writers;
-    info_t *temp;
+    int test, setup;
+    info_t *node;
+    char setup_name[500];
 
-    printf("threads\treaders\twriters");
+    sprintf(setup_name, "%d\t%d\t%d\t%d", mode, size, readers, writers);
 
-    n_tests = 0;
-    while (n_tests < MAX_TESTS && dataset[n_tests].test != NULL)
+    test = find(Tests, MAX_TESTS, test_name);
+    if (test >= Num_Tests) Num_Tests = test+1;
+    setup = find(Setups, MAX_SETUPS, setup_name);
+    if (setup >= Num_Setups) Num_Setups = setup+1;
+
+    node = (info_t *)malloc(sizeof(info_t));
+
+    node->reads = reads;
+    node->writes = writes;
+    node->next = Info[setup][test];
+    Info[setup][test] = node;
+}
+
+static void output(FILE *output)
+{
+    int ii, jj;
+
+    fprintf(output, "mode\tsize\treaders\twriters");
+
+    for (ii=0; ii<Num_Tests; ii++)
     {
-        printf("\t%s_reads\t%s_writes", dataset[n_tests].test, dataset[n_tests].test);
-        n_tests++;
+        fprintf(output, "\t%s reads\t%s writes", Tests[ii], Tests[ii]);
     }
-    printf("\n");
+    fprintf(output, "\n");
 
-    while (dataset[0].test != NULL)
+    for (ii=0; ii<Num_Setups; ii++)
     {
-        size = dataset[0].size;
-        readers = dataset[0].readers;
-        writers = dataset[0].writers;
-        printf("%d\t%d\t%d", size, readers, writers);
-
-        for (ii=0; ii<n_tests; ii++)
+        if (Compute_Average)
         {
-            if (dataset[ii].writers != writers ||
-                dataset[ii].readers != readers ||
-                dataset[ii].size    != size)
+            int count = 0;
+            count_t tot_reads = 0; 
+            count_t tot_writes = 0;
+
+            fprintf(output, "%s", Setups[ii]);
+
+            for (jj=0; jj<Num_Tests; jj++)
             {
-                fprintf(stderr, "dataset mismatch\n");
-                exit(-1);
+                while (Info[ii][jj] != NULL)
+                {
+                    count++;
+                    tot_reads += Info[ii][jj]->reads;
+                    tot_writes += Info[ii][jj]->writes;
+                    Info[ii][jj] = Info[ii][jj]->next;
+                }
+
+                if (count!=0)
+                {
+                    tot_reads /= count;
+                    tot_writes /= count;
+                }
+
+                fprintf(output, "\t%lld\t%lld", tot_reads, tot_writes);
             }
-            printf("\t%lld\t%lld", dataset[ii].reads, dataset[ii].writes);
-            if (dataset[ii].next == NULL)
+            fprintf(output, "\n");
+        }
+        else
+        {
+            while (Info[ii][0] != NULL)
             {
-                dataset[0].test = NULL;
-            }
-            else
-            {
-                temp = dataset[ii].next;
-                dataset[ii].size = dataset[ii].next->size;
-                dataset[ii].readers = dataset[ii].next->readers;
-                dataset[ii].writers = dataset[ii].next->writers;
-                dataset[ii].reads = dataset[ii].next->reads;
-                dataset[ii].writes = dataset[ii].next->writes;
-                dataset[ii].next = dataset[ii].next->next;
-                free(temp);
+                fprintf(output, "%s", Setups[ii]);
+
+                for (jj=0; jj<Num_Tests; jj++)
+                {
+                    if (Info[ii][jj] != NULL)
+                    {
+                        fprintf(output, "\t%lld\t%lld", 
+                               Info[ii][jj]->reads, Info[ii][jj]->writes);
+                        Info[ii][jj] = Info[ii][jj]->next;
+                    } else {
+                        fprintf(output, "\tx\tx");
+                    }
+                }
+
+                fprintf(output, "\n");
             }
         }
-        printf("\n");
+    }
+}
+
+void parse_args(int argc, char **argv)
+{
+    int ii;
+
+    for (ii=1; ii<argc; ii++)
+    {
+        if (argv[ii][0] == '-')
+        {
+            if (strcmp(argv[ii], "-avg") == 0) {
+                Compute_Average = 1;
+            } else {
+                fprintf(stderr, "Unrecognized command %s\n", argv[ii]);
+                exit(-1);
+            }
+
+        } else if (Input_Filename == NULL) {
+            Input_Filename = argv[ii];
+        } else if (Output_Filename == NULL) {
+            Output_Filename = argv[ii];
+        } else {
+            fprintf(stderr, "Unrecognized command %s\n", argv[ii]);
+            exit(-1);
+        }
     }
 }
 
 int main(int argc, char **argv)
 {
     char buff[1000];
-    char *name, *c_size, *c_reads, *c_writes;
+    char *name, *c_mode, *c_size, *c_reads, *c_writes;
     char *c_readers, *c_writers;
     int line_count = 0;
-    int ii;
-    FILE *input;
+    FILE *infile, *outfile;
 
-    if (argc > 1)
+    parse_args(argc, argv);
+    if (Input_Filename != NULL)
     {
-        input = fopen(argv[1], "r");
-        if (input == NULL)
+        infile = fopen(Input_Filename, "r");
+        if (infile == NULL)
         {
-            fprintf(stderr, "unable to open %s\n", argv[1]);
+            fprintf(stderr, "unable to open %s\n", Input_Filename);
             exit(-1);
         }
     } else {
-        input = stdin;
+        infile = stdin;
     }
 
-    info_t dataset[MAX_TESTS];
-    for (ii=0; ii<MAX_TESTS; ii++)
+    if (Output_Filename != NULL)
     {
-        dataset[ii].test = NULL;
+        outfile = fopen(Output_Filename, "w");
+        if (outfile == NULL)
+        {
+            fprintf(stderr, "Unable to open %s\n", Output_Filename);
+            exit(-1);
+        }
+    } else {
+        outfile = stdout;
     }
 
-    while (fgets(buff, sizeof(buff), input))
+
+    init_data();
+
+    while (fgets(buff, sizeof(buff), infile))
     {
         line_count++;
         name = strtok(buff, " ");
+        c_mode = strtok(NULL, " ");
         c_size = strtok(NULL, " ");
         c_readers = strtok(NULL, " ");
         c_writers = strtok(NULL, " ");
@@ -155,16 +229,18 @@ int main(int argc, char **argv)
         if (c_writes == NULL)
         {
             fprintf(stderr, "Invalid line at %d\n"
-                    "%s %s %s %s %s %s\n", line_count,
-                    name, c_size, c_readers, c_writers, c_reads, c_writes);
+                    "%s %s %s %s %s %s %s\n", line_count,
+                    name, c_mode, c_size, 
+                    c_readers, c_writers, c_reads, c_writes);
             exit(-1);
         }
 
-        insert(dataset, name, atoi(c_size), atoi(c_readers), atoi(c_writers),
+        insert(name, atoi(c_mode), atoi(c_size), 
+                atoi(c_readers), atoi(c_writers),
                 atoll(c_reads), atoll(c_writes));
     }
 
-    output(dataset);
+    output(outfile);
 
     fprintf(stderr, "processed input file with %d lines\n", line_count);
 

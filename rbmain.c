@@ -546,7 +546,7 @@ void parse_args(int argc, char *argv[])
                 break;
             case 'p':
                 Params.poll_rcu = atoi(value);
-                if (Params.poll_rcu == 0) usage(argc, argv, argv[ii]);
+                if (Params.poll_rcu < 0) usage(argc, argv, argv[ii]);
                 break;
             case 'r':
                 Params.readers = atoi(value);

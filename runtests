@@ -1,29 +1,37 @@
 #! /bin/bash
+
 rm -f redblack.log
 for SIZE in 64 65536; do
-    #for ACCESS in TRAVERSE TRAVERSEW TRAVERSEN TRAVERSENW; do
+  for MODE in TRAVERSE TRAVERSEN ; do
     for ACCESS in READ WRITE; do
-        for ((ii=0; ii<8; ii++)); do
-            #for CPUS in {1..64}; do
+        for ((ii=0; ii<4; ii++)); do
+            for CPUS in {1..16}; do
             #for CPUS in 1 2 3 4 5 6 7 8 12 16 24 32 40 48 56 64; do
-            for CPUS in 1 2 4 8 16 32 64; do
-                #for TEST in nolock rcu rwl_read rwl_write lock ; do
-                for TEST in rcu rwl_write rwl_read lock ; do
-                    if (($ACCESS == WRITE)); then
-                        READERS=$CPUS-1
+            #for CPUS in 1 2 4 8 16 32 64; do
+                #for TEST in rb_rcu rb_rwl_write rb_rwl_read rb_lock ccavl rpavl ; do
+                for TEST in rb_rcu rb_rwl_write rb_rwl_read rb_lock ; do
+                    if [ $TEST == ccavl ] ; then
+                        ASYNC=1
+                    else
+                        ASYNC=0
+                    fi
+                    if [ $ACCESS == WRITE ] ; then
+                        READERS=$[ $CPUS-1 ]
                         WRITERS=1
                     else
                         READERS=$CPUS
                         WRITERS=0
                     fi
 
-                    ./rb_$TEST r:$READERS w:$WRITERS m:$ACCESS s:$SIZE  >> redblack.log
+                    ./$TEST m:$MODE p:$ASYNC r:$READERS w:$WRITERS s:$SIZE  >> redblack.log
+                    #echo "./$TEST p:$ASYNC r:$READERS w:$WRITERS s:$SIZE"
                     echo "Iteration " $ii $TEST $CPUS $ACCESS $SIZE
                     who
                 done
             done
         done
     done
+  done
 done
 
 awk -f decode.awk redblack.log >redblack.txt
