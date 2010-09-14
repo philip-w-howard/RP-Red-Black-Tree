@@ -103,14 +103,14 @@ static void output(FILE *output)
     {
         if (Compute_Average)
         {
-            int count = 0;
-            count_t tot_reads = 0; 
-            count_t tot_writes = 0;
-
             fprintf(output, "%s", Setups[ii]);
 
             for (jj=0; jj<Num_Tests; jj++)
             {
+                int count = 0;
+                count_t tot_reads = 0; 
+                count_t tot_writes = 0;
+
                 while (Info[ii][jj] != NULL)
                 {
                     count++;

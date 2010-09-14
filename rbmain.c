@@ -55,6 +55,7 @@ typedef struct
     int mode;
     int write_elem;
     void *lock;
+    int done;
 } thread_data_t;
 
 #define GOFLAG_INIT 0
@@ -262,6 +263,8 @@ static void *rcu_thread(void *arg)
     {
         poll(NULL, 0, 10);
     }
+
+    thread_data->done = 1;
 
     return get_thread_stats(0, 0, 0, 0, 0, 0);
 }
@@ -484,6 +487,8 @@ void *perftest_thread(void *arg)
 
     lock_thread_close(thread_data->lock, thread_index);
 
+    thread_data->done = 1;
+
     return get_thread_stats(n_reads, n_read_fails, n_inserts, n_insert_fails, 
             n_deletes, n_delete_fails);
 }
@@ -582,6 +587,7 @@ int main(int argc, char *argv[])
     unsigned long long tot_stats[MAX_STATS];
     thread_data_t thread_data[MAX_THREADS];
     void *lock;
+    time_t stop_time;
 
     parse_args(argc, argv);
 
@@ -590,9 +596,10 @@ int main(int argc, char *argv[])
         tot_stats[ii] = 0;
     }
 
-    printf("Test: %s %d readers %d writers %d mode %d %d\n", 
+    printf("Test: %s %d readers %d writers %d mode %d %d %d\n", 
             argv[0], Params.size,
-            Params.readers, Params.writers, Params.mode, Params.scale);
+            Params.readers, Params.writers, Params.mode, Params.scale, 
+            NUM_CPUS);
 
     lock = lock_init();
     lock_thread_init(lock, 0);
@@ -622,6 +629,7 @@ int main(int argc, char *argv[])
             thread_data[ii].mode = Params.mode;
 
         thread_data[ii].lock = lock;
+        thread_data[ii].done = 0;
     }
 
 	for (ii = 0; ii < Params.readers+Params.writers; ii++)
@@ -663,9 +671,18 @@ int main(int argc, char *argv[])
 	lock_mb();
 	goflag = GOFLAG_STOP;
 	lock_mb();
+    stop_time = time(NULL);
 
 	for (ii=0; ii<Params.readers+Params.writers; ii++)
     {
+        while (!thread_data[ii].done)
+        {
+            if (time(NULL) > stop_time+2)
+            {
+                fprintf(stderr, "Thread %d failed to terminate\n", ii);
+                exit(-4);
+            }
+        }
         pthread_join(thread_data[ii].thread_id, &vstats);
         stats = (unsigned long long *)vstats;
         printf("Thr %2d ", ii);

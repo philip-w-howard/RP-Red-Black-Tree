@@ -14,14 +14,14 @@ char *implementation_name()
     return "RCU";
 }
 
-#define NSTATS      12
-#define STAT_READ   6
-#define STAT_WRITE  7
-#define STAT_SPINS  8
-#define STAT_SYNC   9
-#define STAT_RWSPINS  10
-#define STAT_FREE   11
-#define STAT_FREE_SYNC 12
+#define NSTATS      13
+#define STAT_READ   7
+#define STAT_WRITE  8
+#define STAT_SPINS  9
+#define STAT_SYNC   10
+#define STAT_RWSPINS  11
+#define STAT_FREE   12
+#define STAT_FREE_SYNC 13
 
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
     unsigned long long Thread_Stats[NSTATS+1];

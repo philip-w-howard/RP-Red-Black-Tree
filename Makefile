@@ -7,12 +7,12 @@ FGFLAGS = -DFG_LOCK
 RCUFLAGS = -DRCU
 MULTIFLAGS = -DMULTIWRITERS
 AVLFLAGS = $(RCUFLAGS) $(MULTIFLAGS) -DRCU_USE_MUTEX $(FGFLAGS)
-CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) # -O1 -pg 
+CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) -O1 # -pg 
 LFLAGS = -lrt $(CFLAGS)
 
 CC = gcc
 
-TARGETS = rcumulti fgl rb_rwl_write rb_rwl_read rb_rcu rbl_rcu ngp rb_lock rb_nolock ccavl rpavl parse # rcutest rb_fg # rb_urcu urcutest 
+TARGETS = rcumulti fgl rb_rwl_write rb_rwl_read rb_rcu rbl_rcu ngp rb_lock rb_nolock ccavl rpavl rwlravl rwlwavl lockavl nolockavl parse # rcutest rb_fg # rb_urcu urcutest 
 all: $(TARGETS)
 
 stuff: aotest
@@ -48,6 +48,26 @@ rpavl: rbmain.c rpavl.c avl.h rcu.c
 	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS)
 	$(CC) -c rpavl.c $(CFLAGS) $(RCUFLAGS)
 	$(CC) -o rpavl $(LFLAGS) rbmain.c rbnode.o rpavl.o rcu.o $(RCUFLAGS)
+
+rwlravl: rbmain.c rpavl.c avl.h rwl_read.o
+	$(CC) -c rbnode.c $(CFLAGS) 
+	$(CC) -c rpavl.c $(CFLAGS)
+	$(CC) -o rwlravl $(LFLAGS) rbmain.c rbnode.o rpavl.o rwl_read.o
+
+lockavl: rbmain.c rpavl.c avl.h lock.o
+	$(CC) -c rbnode.c $(CFLAGS) 
+	$(CC) -c rpavl.c $(CFLAGS)
+	$(CC) -o lockavl $(LFLAGS) rbmain.c rbnode.o rpavl.o lock.o
+
+nolockavl: rbmain.c rpavl.c avl.h nolock.o
+	$(CC) -c rbnode.c $(CFLAGS) 
+	$(CC) -c rpavl.c $(CFLAGS)
+	$(CC) -o nolockavl $(LFLAGS) rbmain.c rbnode.o rpavl.o nolock.o
+
+rwlwavl: rbmain.c rpavl.c avl.h rwl_write.o
+	$(CC) -c rbnode.c $(CFLAGS) 
+	$(CC) -c rpavl.c $(CFLAGS)
+	$(CC) -o rwlwavl $(LFLAGS) rbmain.c rbnode.o rpavl.o rwl_write.o
 
 ccavl: rbmain.c ccavl.c avl.h rcu.c
 	$(CC) -c rbnode.c $(CFLAGS) $(AVLFLAGS)
