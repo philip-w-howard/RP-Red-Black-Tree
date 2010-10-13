@@ -100,6 +100,41 @@ int Read(unsigned long *random_seed, param_t *params)
     else
         return 1;
 }
+int RRead(unsigned long *random_seed, param_t *params)
+{
+    long int_value;
+    void *value;
+
+    int_value = get_random(random_seed) % params->scale + 1;
+    value = rb_find(My_Tree, int_value);
+    if ((unsigned long)value == int_value)
+        return 0;
+    else
+        return 1;
+}
+int Delete(unsigned long *random_seed, param_t *params)
+{
+    int errors = 0;
+    void *value;
+    long int_value;
+
+    int_value = get_random(random_seed) % params->scale + 1;
+    value = rb_remove(My_Tree, int_value);
+    if (value == NULL) errors++;
+
+    return errors;
+}
+int Insert(unsigned long *random_seed, param_t *params)
+{
+    int errors = 0;
+    void *value;
+    long int_value;
+
+    int_value = get_random(random_seed) % params->scale + 1;
+    if (!rb_insert(My_Tree, int_value, (void *)int_value) ) errors++;
+
+    return errors;
+}
 int Write(unsigned long *random_seed, param_t *params)
 {
     int errors = 0;

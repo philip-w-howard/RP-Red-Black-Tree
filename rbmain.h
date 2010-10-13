@@ -50,6 +50,8 @@ typedef struct
     pthread_t thread_id;
     int thread_index;
     int update_percent;             // number out of UPDATE_MAX that are updates
+    int insert_percent;
+    int delete_percent;
     int mode;
     int write_elem;
     void *lock;
@@ -60,13 +62,15 @@ typedef struct
 {
     int size;
     int scale;
-    int delay;
+    int runtime;
     int mode;
     int cpus;
     int readers;
     int writers;
     int poll_rcu;
     int update_percent;             // number out of UPDATE_MAX that are updates
+    int insert_percent;
+    int delete_percent;
 } param_t;
 
 unsigned long init_random_seed();

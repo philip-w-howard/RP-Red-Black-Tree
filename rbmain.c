@@ -24,7 +24,7 @@
 
 volatile int goflag = GOFLAG_INIT;
 
-param_t Params = {64, 10000, 1, MODE_READ, NUM_CPUS, 0, 0};
+param_t Params = {64, 10000, 1, MODE_READ, NUM_CPUS, 0, 0, 0, 0, 0, 0};
 
 unsigned long init_random_seed()
 {
@@ -108,7 +108,8 @@ void set_affinity(int cpu_number)
 void *thread_func(void *arg)
 {
     thread_data_t *thread_data = (thread_data_t *)arg;
-    int update_percent = thread_data->update_percent;
+    int insert_percent = thread_data->insert_percent;
+    int delete_percent = thread_data->delete_percent;
     int thread_index = thread_data->thread_index;
     unsigned long random_seed = init_random_seed();
 
@@ -156,16 +157,23 @@ void *thread_func(void *arg)
             while (goflag == GOFLAG_RUN) 
             {
                 int_value = get_random(&random_seed) % UPDATE_MAX;
-                if (int_value < update_percent)
+                if (int_value < delete_percent)
                 {
-                    if (Write(&random_seed, &Params))
+                    if (Delete(&random_seed, &Params))
                         n_writes++;
                     else
                         n_write_fails++;
                 }
-                else
+                else if (int_value < insert_percent+delete_percent)
                 {
-                    if (Read(&random_seed, &Params))
+                    if (Insert(&random_seed, &Params))
+                        n_write_fails++;
+                    else
+                        n_writes++;
+                }
+                else 
+                {
+                    if (RRead(&random_seed, &Params))
                         n_read_fails++;
                     else
                         n_reads++;
@@ -190,7 +198,7 @@ void usage(int argc, char *argv[], char *bad_arg)
     if (bad_arg != NULL) fprintf(stderr, "Invalid param %s\n", bad_arg);
 
 	fprintf(stderr, 
-       "Usage: %s [c:<CPUS>] [d:<duration>] [m:<READ | WRITE | RAND>] [s:<tree size>] [S:<tree scale>] [w:<writers>] [r:<readers>] [u:<update %%>]\n",
+       "Usage: %s [c:<CPUS>] [d:<delete %%>] [i:<insert %%] [m:<READ | WRITE | RAND>] [R:<run time>] [s:<tree size>] [S:<tree scale>] [w:<writers>] [r:<readers>] [u:<update %%>]\n",
 
        argv[0]);
 	exit(-1);
@@ -218,8 +226,12 @@ void parse_args(int argc, char *argv[])
                 if (Params.cpus < 1) usage(argc, argv, argv[ii]);
                 break;
             case 'd':
-                Params.delay = atoi(value);
-                if (Params.delay < 1) usage(argc, argv, argv[ii]);
+                Params.delete_percent = atoi(value);
+                if (Params.delete_percent < 0) usage(argc, argv, argv[ii]);
+                break;
+            case 'i':
+                Params.insert_percent = atoi(value);
+                if (Params.insert_percent < 0) usage(argc, argv, argv[ii]);
                 break;
             case 'm':
                 if (strcmp(value, "READ")==0)
@@ -236,6 +248,10 @@ void parse_args(int argc, char *argv[])
             case 'p':
                 Params.poll_rcu = atoi(value);
                 if (Params.poll_rcu < 0) usage(argc, argv, argv[ii]);
+                break;
+            case 'R':
+                Params.runtime = atoi(value);
+                if (Params.runtime < 1) usage(argc, argv, argv[ii]);
                 break;
             case 'r':
                 Params.readers = atoi(value);
@@ -300,6 +316,8 @@ int main(int argc, char *argv[])
     {
         thread_data[ii].thread_index = ii;
         thread_data[ii].update_percent = Params.update_percent;
+        thread_data[ii].delete_percent = Params.delete_percent;
+        thread_data[ii].insert_percent = Params.insert_percent;
 
         if (ii < Params.writers)
         {
@@ -339,7 +357,7 @@ int main(int argc, char *argv[])
 	sleep(1);
 	goflag = GOFLAG_RUN;
 	lock_mb();
-	sleep(Params.delay);
+	sleep(Params.runtime);
 	lock_mb();
 	goflag = GOFLAG_STOP;
 	lock_mb();

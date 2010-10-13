@@ -12,7 +12,7 @@ LFLAGS = -lrt $(CFLAGS)
 
 CC = gcc
 
-TARGETS = rcumulti fgl rb_rwl_write rb_rwl_read rb_rcu rbl_rcu ngp rb_lock rb_nolock ccavl rpavl rwlravl rwlwavl lockavl nolockavl parse # rcutest rb_fg # rb_urcu urcutest 
+TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock ll_rwlr parse # ngp rbl_rcu ccavl rpavl rwlravl rwlwavl lockavl nolockavl fgl rcumulti rcutest rb_fg # rb_urcu urcutest 
 all: $(TARGETS)
 
 stuff: aotest
@@ -99,6 +99,9 @@ rb_rwl_read: rbmain.c rbnode.c rbtree.c rwl_read.o rbtest.o
 	$(CC) -c rbnode.c $(CFLAGS) 
 	$(CC) -c rbtree.c $(CFLAGS) 
 	$(CC) -o rb_rwl_read $(LFLAGS) rbmain.c $(objects) rwl_read.o
+
+ll_rwlr: rbmain.c lltest.o rwl_read.o
+	$(CC) -o ll_rwlr $(LFLAGS) rbmain.c rwl_read.o lltest.o
 
 rbl_rcu: rbmain.c rbnode.c rbltree.c rcu.c rbtest.o
 	$(CC) -c rbnode.c $(CFLAGS) $(MULTIFLAGS)
