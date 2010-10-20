@@ -260,7 +260,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
     rbnode_t *greatgrandparent = grandparent->parent;
     int left = 0;
 
-    tree->restructures++;
+    //NOSTATS tree->restructures++;
 
     if (grandparent->parent != NULL) left = is_left(grandparent);
     //printf("restructure %s\n", toString(node));
@@ -270,7 +270,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         // diag left
 #if defined(NO_GRACE_PERIOD) || defined(RCU)
         cprime = rbnode_copy(grandparent);
-        tree->restructure_copies++;
+        //NOSTATS tree->restructure_copies++;
         bprime = parent;
         aprime = node;
 #else
@@ -309,7 +309,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         cprime = rbnode_copy(grandparent);
         aprime = rbnode_copy(parent);
         bprime = node;
-        tree->restructure_multi_copies++;
+        //NOSTATS tree->restructure_multi_copies++;
 
         cprime->left = aprime;
         aprime->parent = cprime;
@@ -355,7 +355,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         // diag right
 #if defined(NO_GRACE_PERIOD) || defined(RCU)
         aprime = rbnode_copy(grandparent);
-        tree->restructure_copies++;
+        //NOSTATS tree->restructure_copies++;
         bprime = parent;
         cprime = node;
 #else
@@ -393,7 +393,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         aprime = rbnode_copy(grandparent);
         cprime = rbnode_copy(parent);
         bprime = node;
-        tree->restructure_multi_copies++;
+        //NOSTATS tree->restructure_multi_copies++;
 
         aprime->right = cprime;
         cprime->parent = aprime;
@@ -704,7 +704,7 @@ void *rb_remove(rbtree_t *tree, long key)
             // exchange children of swap and node
 			rbnode_t *new_node = rbnode_copy(swap);
             //check_for(tree->root, new_node);
-			tree->swap_copies++;
+			//NOSTATS tree->swap_copies++;
 
             rcu_assign_pointer(new_node->left, node->left);
             node->left->parent = new_node;      // safe: checked above
@@ -726,7 +726,7 @@ void *rb_remove(rbtree_t *tree, long key)
 
             // need to make sure bprime is seen before path to b is erased 
             rcu_synchronize(tree->lock);
-            tree->grace_periods++;
+            //NOSTATS tree->grace_periods++;
 
             prev = swap->parent;
             next = swap->right;

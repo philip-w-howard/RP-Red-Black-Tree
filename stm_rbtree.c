@@ -101,7 +101,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
     rbnode_t *greatgrandparent = LOAD(grandparent->parent);
     int left = 0;
 
-    STORE(tree->restructures, tree->restructures+1);
+    //NOSTATS STORE(tree->restructures, LOAD(tree->restructures)+1);
 
     if (LOAD(grandparent->parent) != NULL) left = is_left(grandparent);
     //printf("restructure %s\n", toString(node));
@@ -141,10 +141,10 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         bprime = node;
         cprime = grandparent;
 
-        STORE(aprime->right, bprime->left);
+        STORE(aprime->right, LOAD(bprime->left));
         if (LOAD(bprime->left) != NULL) STORE(LOAD(bprime->left)->parent, aprime);
 
-        STORE(cprime->left, bprime->right);
+        STORE(cprime->left, LOAD(bprime->right));
         if (LOAD(bprime->right) != NULL) STORE(LOAD(bprime->right)->parent, cprime);
 
         STORE(bprime->left, aprime);
@@ -174,7 +174,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         bprime = parent;
         cprime = node;
 
-        STORE(aprime->right, bprime->left);
+        STORE(aprime->right, LOAD(bprime->left));
         if (LOAD(bprime->left) != NULL) STORE(LOAD(bprime->left)->parent, aprime);
 
         STORE(bprime->left, aprime);
@@ -201,10 +201,10 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         bprime = node;
         cprime = parent;
 
-        STORE(aprime->right, bprime->left);
+        STORE(aprime->right, LOAD(bprime->left));
         if (LOAD(bprime->left) != NULL) STORE(LOAD(bprime->left)->parent, aprime);
 
-        STORE(cprime->left, bprime->right);
+        STORE(cprime->left, LOAD(bprime->right));
         if (LOAD(bprime->right) != NULL) STORE(LOAD(bprime->right)->parent, cprime);
 
         STORE(bprime->left, aprime);

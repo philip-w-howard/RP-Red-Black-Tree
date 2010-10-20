@@ -60,7 +60,7 @@ rb_stm: rbmain.c stm_rbtree.c rbtest.o rbnode.c stm.c
 	$(CC) -c rbnode.c $(CFLAGS) $(STMFLAGS)
 	$(CC) -c stm_rbtree.c $(CFLAGS) $(STMFLAGS)
 	$(CC) -c rbtest.c $(CFLAGS) $(STMFLAGS)
-	$(CC) -o rb_stm $(LFLAGS) rbmain.c rbtest.o rbnode.o stm_rbtree.o stm.o $(STM_LFLAGS) 
+	$(CC) -o rb_stm $(LFLAGS) rbmain.c rbtest.o rbnode.o stm_rbtree.o stm.o $(STMFLAGS) $(STM_LFLAGS) 
 
 rwlravl: rbmain.c rpavl.c avl.h rwl_read.o rbtest.o
 	$(CC) -c rbnode.c $(CFLAGS) 
