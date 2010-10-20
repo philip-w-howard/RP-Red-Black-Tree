@@ -16,7 +16,7 @@
 #define RB_START_RO_TX()   BEGIN_TRANSACTION
 #define RB_START_TX()      BEGIN_TRANSACTION
 #define RB_COMMIT()        END_TRANSACTION
-#define LOAD(a)            (typeof((a)) )wlpdstm_read_word((Word *)&(a))
+#define LOAD(a)            ((typeof((a)) )wlpdstm_read_word((Word *)&(a)))
 #define STORE(a,b)         wlpdstm_write_word((Word *)&(a), (Word)(b))
 
 //**************************************
@@ -33,7 +33,7 @@ static char *toString(rbnode_t *node)
 //*******************************
 static int is_left(rbnode_t *node)
 {
-    if (LOAD(node->parent->left) == node)
+    if (LOAD(LOAD(node->parent)->left) == node)
         return 1;
     else
         return 0;
@@ -88,22 +88,22 @@ void *rb_find(rbtree_t *tree, long key)
 //*******************************
 static rbnode_t *sibling(rbnode_t *node)
 {
-    if (LOAD(node->parent->left) == node)
-        return LOAD(node->parent->right);
+    if (LOAD(LOAD(node->parent)->left) == node)
+        return LOAD(LOAD(node->parent)->right);
     else
-        return LOAD(node->parent->left);
+        return LOAD(LOAD(node->parent)->left);
 }
 //*******************************
 static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
                         rbnode_t **a, rbnode_t **b, rbnode_t **c)
 {
     rbnode_t *aprime, *bprime, *cprime;
-    rbnode_t *greatgrandparent = grandparent->parent;
+    rbnode_t *greatgrandparent = LOAD(grandparent->parent);
     int left = 0;
 
     STORE(tree->restructures, tree->restructures+1);
 
-    if (grandparent->parent != NULL) left = is_left(grandparent);
+    if (LOAD(grandparent->parent) != NULL) left = is_left(grandparent);
     //printf("restructure %s\n", toString(node));
 
     if (LOAD(grandparent->left) == parent && LOAD(parent->left) == node)
@@ -114,8 +114,8 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         cprime = grandparent;
 
         // assign pointer
-        STORE(cprime->left, bprime->right);
-        if (LOAD(bprime->right) != NULL) STORE(bprime->right->parent, cprime);
+        STORE(cprime->left, LOAD(bprime->right));
+        if (LOAD(bprime->right) != NULL) STORE(LOAD(bprime->right)->parent, cprime);
         
         STORE(bprime->right, cprime);
         STORE(cprime->parent, bprime);
@@ -142,10 +142,10 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         cprime = grandparent;
 
         STORE(aprime->right, bprime->left);
-        if (LOAD(bprime->left) != NULL) STORE(bprime->left->parent, aprime);
+        if (LOAD(bprime->left) != NULL) STORE(LOAD(bprime->left)->parent, aprime);
 
         STORE(cprime->left, bprime->right);
-        if (LOAD(bprime->right) != NULL) STORE(bprime->right->parent, cprime);
+        if (LOAD(bprime->right) != NULL) STORE(LOAD(bprime->right)->parent, cprime);
 
         STORE(bprime->left, aprime);
         STORE(aprime->parent, bprime);
@@ -175,7 +175,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         cprime = node;
 
         STORE(aprime->right, bprime->left);
-        if (LOAD(bprime->left) != NULL) STORE(bprime->left->parent, aprime);
+        if (LOAD(bprime->left) != NULL) STORE(LOAD(bprime->left)->parent, aprime);
 
         STORE(bprime->left, aprime);
         STORE(aprime->parent, bprime);
@@ -202,10 +202,10 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
         cprime = parent;
 
         STORE(aprime->right, bprime->left);
-        if (LOAD(bprime->left) != NULL) STORE(bprime->left->parent, aprime);
+        if (LOAD(bprime->left) != NULL) STORE(LOAD(bprime->left)->parent, aprime);
 
         STORE(cprime->left, bprime->right);
-        if (LOAD(bprime->right) != NULL) STORE(bprime->right->parent, cprime);
+        if (LOAD(bprime->right) != NULL) STORE(LOAD(bprime->right)->parent, cprime);
 
         STORE(bprime->left, aprime);
         STORE(aprime->parent, bprime);
@@ -260,7 +260,7 @@ static void recolor(rbtree_t *tree, rbnode_t *node)
         }
 
         if (LOAD(grandparent->parent) != NULL && 
-            LOAD(grandparent->parent->color) == RED)
+            LOAD(LOAD(grandparent->parent)->color) == RED)
         {
             recolor(tree, grandparent);
         }
@@ -352,9 +352,9 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
     if (LOAD(y->color) == BLACK)
     {
         z = NULL;
-        if (LOAD(y->left) != NULL && LOAD(y->left->color) == RED)
+        if (LOAD(y->left) != NULL && LOAD(LOAD(y->left)->color) == RED)
             z = LOAD(y->left);
-        else if (LOAD(y->right) != NULL && LOAD(y->right->color) == RED)
+        else if (LOAD(y->right) != NULL && LOAD(LOAD(y->right)->color) == RED)
             z = LOAD(y->right);
         if (z != NULL)
         {
@@ -455,7 +455,7 @@ void *rb_remove(rbtree_t *tree, long key)
             if (swap == LOAD(node->right))
             {
                 STORE(swap->left, LOAD(node->left));
-                STORE(node->left->parent, swap);      // safe: checked above
+                STORE(LOAD(node->left)->parent, swap);      // safe: checked above
 
                 if (prev == NULL) {
                     STORE(tree->root, swap);
@@ -476,16 +476,16 @@ void *rb_remove(rbtree_t *tree, long key)
 
                 // fix-up swap's left child (replacing a NULL child)
                 STORE(swap->left, LOAD(node->left));
-                STORE(node->left->parent, swap);      // safe: checked above
+                STORE(LOAD(node->left)->parent, swap);      // safe: checked above
                 //node->left = NULL;              // swap->left guaranteed to be NULL
 
                 // take swap temporarily out of the tree
-                STORE(swap->parent->left, LOAD(swap->right));
-                if (LOAD(swap->right) != NULL) STORE(swap->right->parent, LOAD(swap->parent));
+                STORE(LOAD(swap->parent)->left, LOAD(swap->right));
+                if (LOAD(swap->right) != NULL) STORE(LOAD(swap->right)->parent, LOAD(swap->parent));
 
                 // fix-up swap's right child
                 STORE(swap->right, LOAD(node->right));
-                STORE(node->right->parent, swap);     // safe: checked above
+                STORE(LOAD(node->right)->parent, swap);     // safe: checked above
 
                 // put swap in new location
                 if (LOAD(node->parent) == NULL)
@@ -494,9 +494,9 @@ void *rb_remove(rbtree_t *tree, long key)
                     STORE(swap->parent, NULL);
                 } else {
                     if (is_left(node)) {
-                        STORE(node->parent->left, swap);
+                        STORE(LOAD(node->parent)->left, swap);
                     } else {
-                        STORE(node->parent->right, swap);
+                        STORE(LOAD(node->parent)->right, swap);
                     }
                     STORE(swap->parent, LOAD(node->parent));
                 }

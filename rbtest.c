@@ -146,10 +146,6 @@ int Insert(unsigned long *random_seed, param_t *params)
     int_value = get_random(random_seed) % params->scale + 1;
     if (!rb_insert(My_Tree, int_value, (void *)int_value) ) errors++;
 
-#ifdef STM
-    check_tree();
-#endif
-
     return errors;
 }
 int Write(unsigned long *random_seed, param_t *params)
@@ -159,29 +155,17 @@ int Write(unsigned long *random_seed, param_t *params)
     void *value;
     long int_value;
 
-#ifdef STM
-    check_tree(My_Tree);
-#endif
     write_elem = get_random(random_seed) % params->size;
     value = rb_remove(My_Tree, Values[write_elem]);
     if (value == NULL) errors++;
 
-#ifdef STM
-    check_tree();
-#endif
     int_value = get_random(random_seed) % params->scale + 1;
     while ( !rb_insert(My_Tree, int_value, (void *)int_value) )
     {
-#ifdef STM
-    check_tree();
-#endif
         int_value = get_random(random_seed) % params->scale + 1;
     }
     Values[write_elem] = int_value;
 
-#ifdef STM
-    check_tree();
-#endif
     return errors;
 }
 int Size(void *data_structure)
