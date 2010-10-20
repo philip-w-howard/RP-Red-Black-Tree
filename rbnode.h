@@ -16,7 +16,11 @@ typedef struct rbnode_s
     struct rbnode_s *parent;
 	unsigned long index;
     // Red Black
-	int color;
+#ifdef STM
+	long color;
+#else
+    int color;
+#endif
 
     // FG locking and AVL
     void *lock;

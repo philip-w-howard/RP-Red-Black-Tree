@@ -7,6 +7,9 @@
 #ifdef FG_LOCK
 #include "lock.h"
 #endif
+#ifdef STM
+#include <stm.h>
+#endif
 
 #define STACK_SIZE      20
 
@@ -18,7 +21,7 @@ typedef struct
 } extended_node_t;
 
 static unsigned long Index = 0;
-#ifndef URCU
+#if !defined(URCU) && !defined(STM)
 static void *Block[STACK_SIZE];
 static int Top = 0;
 #endif
@@ -37,7 +40,7 @@ static void *rb_alloc()
     pthread_mutex_lock(&Alloc_Lock);
 #endif
 
-#ifndef URCU
+#if !defined(URCU) && !defined(STM)
     if (Top != 0) 
     {
         ptr = Block[--Top];
@@ -45,7 +48,11 @@ static void *rb_alloc()
     else
 #endif
     {
+#ifdef STM
+        ptr = (extended_node_t *)wlpdstm_tx_malloc(sizeof(extended_node_t));
+#else
         ptr = (extended_node_t *)malloc(sizeof(extended_node_t));
+#endif
         assert(ptr != NULL);
 #ifdef FG_LOCK
         ptr->node.lock = NULL;
@@ -87,7 +94,7 @@ void rbnode_free(void *ptr)
     }
     */
 
-#ifndef URCU
+#if !defined(URCU) && !defined(STM)
     if (Top < STACK_SIZE)
     {
         Block[Top++] = eptr;
@@ -98,7 +105,11 @@ void rbnode_free(void *ptr)
 #ifdef FG_LOCK
         if (eptr->node.lock != NULL) free(eptr->node.lock);
 #endif
+#ifdef STM
+        wlpdstm_tx_free(ptr, sizeof(extended_node_t));
+#else
         free(eptr);
+#endif
     }
 
 #ifdef MULTIWRITERS

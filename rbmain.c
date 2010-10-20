@@ -33,6 +33,7 @@ unsigned long init_random_seed()
 
     clock_gettime(CLOCK_REALTIME, &cur_time);
     seed = cur_time.tv_sec + cur_time.tv_nsec;
+seed=1283972361;
 
     return seed;
 }

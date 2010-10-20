@@ -124,14 +124,31 @@ int Delete(unsigned long *random_seed, param_t *params)
 
     return errors;
 }
+static void check_tree()
+{
+    if (!rb_valid(My_Tree)) 
+    {
+        printf("******* INVALID TREE **********\n");
+        printf("******* INVALID TREE **********\n");
+        printf("******* INVALID TREE **********\n");
+        printf("******* INVALID TREE **********\n");
+        rb_output_list(My_Tree);
+        exit(1);
+    } else {
+        rb_output(My_Tree);
+    }
+}
 int Insert(unsigned long *random_seed, param_t *params)
 {
     int errors = 0;
-    void *value;
     long int_value;
 
     int_value = get_random(random_seed) % params->scale + 1;
     if (!rb_insert(My_Tree, int_value, (void *)int_value) ) errors++;
+
+#ifdef STM
+    check_tree();
+#endif
 
     return errors;
 }
@@ -142,17 +159,29 @@ int Write(unsigned long *random_seed, param_t *params)
     void *value;
     long int_value;
 
+#ifdef STM
+    check_tree(My_Tree);
+#endif
     write_elem = get_random(random_seed) % params->size;
     value = rb_remove(My_Tree, Values[write_elem]);
     if (value == NULL) errors++;
 
+#ifdef STM
+    check_tree();
+#endif
     int_value = get_random(random_seed) % params->scale + 1;
     while ( !rb_insert(My_Tree, int_value, (void *)int_value) )
     {
+#ifdef STM
+    check_tree();
+#endif
         int_value = get_random(random_seed) % params->scale + 1;
     }
     Values[write_elem] = int_value;
 
+#ifdef STM
+    check_tree();
+#endif
     return errors;
 }
 int Size(void *data_structure)
