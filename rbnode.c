@@ -8,7 +8,7 @@
 #include "lock.h"
 #endif
 #ifdef STM
-#include <stm.h>
+#include "my_stm.h"
 #endif
 
 #define STACK_SIZE      20

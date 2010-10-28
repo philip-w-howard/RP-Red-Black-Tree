@@ -6,9 +6,9 @@
 */
 #include <stdlib.h>
 #include <stdio.h>
-#include <stm.h>
 #include <pthread.h>
 
+#include "my_stm.h"
 #include "lock.h"
 #include "rbnode.h"
 
@@ -72,3 +72,8 @@ void write_unlock(void *lock) {}
 //void rcu_synchronize(void *lock) {}
 void rcu_free(void *lock, void (*func)(void *ptr), void *ptr) { func(ptr); }
 
+void DO_STORE(Word *a, Word b)
+{
+    printf("STORE(%p, %llX)\n", a, b);
+    wlpdstm_write_word(a, b);
+}

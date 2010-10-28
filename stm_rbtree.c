@@ -11,13 +11,7 @@
 #include "rbtree.h"
 //#include "lock.h"
 #include "rcu.h"
-#include <stm.h>
-
-#define RB_START_RO_TX()   BEGIN_TRANSACTION
-#define RB_START_TX()      BEGIN_TRANSACTION
-#define RB_COMMIT()        END_TRANSACTION
-#define LOAD(a)            ((typeof((a)) )wlpdstm_read_word((Word *)&(a)))
-#define STORE(a,b)         wlpdstm_write_word((Word *)&(a), (Word)(b))
+#include "my_stm.h"
 
 //**************************************
 //void check_for(rbnode_t *node, rbnode_t *new_node);
@@ -745,7 +739,7 @@ static void output_list(rbnode_t *node, int depth)
     if (node != NULL)
     {
         output_list(node->left, depth+1);
-        printf("depth: %d value: %s", depth, toString(node));
+        printf("depth: %d node: %p value: %s", depth, node, toString(node));
         printf(" l: %s", toString(node->left));
         printf(" r: %s", toString(node->right));
         if (rbnode_invalid(node, depth)) 
@@ -805,7 +799,9 @@ void output(rbnode_t *node, int depth)
 //**************************************
 void rb_output_list(rbtree_t *tree)
 {
+    printf("OUTPUT LIST\n");
     output_list(tree->root, 0);
+    printf("\n");
 }//**************************************
 void rb_output(rbtree_t *tree)
 {

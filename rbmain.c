@@ -17,6 +17,9 @@
 
 #include "tests.h"
 #include "rbmain.h"
+#ifdef STM
+#include "my_stm.h"
+#endif
 
 #define GOFLAG_INIT 0
 #define GOFLAG_RUN  1
@@ -33,6 +36,8 @@ unsigned long init_random_seed()
 
     clock_gettime(CLOCK_REALTIME, &cur_time);
     seed = cur_time.tv_sec + cur_time.tv_nsec;
+
+//seed = 12348234767;
 
     return seed;
 }
@@ -397,7 +402,7 @@ int main(int argc, char *argv[])
     Output_Stats(my_data);
 
 #ifdef STM
-	wlpdstm_print_stats();
+//	wlpdstm_print_stats();
 #endif
     return 0;
 }

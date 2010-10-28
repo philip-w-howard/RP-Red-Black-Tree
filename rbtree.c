@@ -1066,7 +1066,9 @@ void output(rbnode_t *node, int depth)
 //**************************************
 void rb_output_list(rbtree_t *tree)
 {
+    printf("OUTPUT LIST\n");
     output_list(tree->root, 0);
+    printf("\n");
 }//**************************************
 void rb_output(rbtree_t *tree)
 {
