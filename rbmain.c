@@ -288,6 +288,12 @@ void parse_args(int argc, char *argv[])
     }
 }
 
+void thread_stuck(int id)
+{
+    fprintf(stderr, "Thread %d failed to terminate\n", id);
+    //sleep(100000);
+    //exit(-4);
+}
 int main(int argc, char *argv[])
 {
     void *vstats;
@@ -374,20 +380,23 @@ int main(int argc, char *argv[])
         {
             if (time(NULL) > stop_time+2)
             {
-                fprintf(stderr, "Thread %d failed to terminate\n", ii);
-                exit(-4);
+                thread_stuck(ii);
+                break;
             }
         }
-        pthread_join(thread_data[ii].thread_id, &vstats);
-        stats = (unsigned long long *)vstats;
-        printf("Thr %2d ", ii);
-
-        for (jj=1; jj<stats[0]+1; jj++)
+        if (thread_data[ii].done)
         {
-            printf(" %'7lld", stats[jj]);
-            tot_stats[jj] += stats[jj];
+            pthread_join(thread_data[ii].thread_id, &vstats);
+            stats = (unsigned long long *)vstats;
+            printf("Thr %2d ", ii);
+
+            for (jj=1; jj<stats[0]+1; jj++)
+            {
+                printf(" %'7lld", stats[jj]);
+                tot_stats[jj] += stats[jj];
+            }
+            printf("\n");
         }
-        printf("\n");
     }
 
     printf("post tree size: %d\n", Size(my_data));

@@ -114,10 +114,10 @@ void write_unlock(void *vlock)
 }
 //**********************************************
 /*
-void rcu_synchronize(void *lock)
+void rp_wait_grace_period(void *lock)
 {
     assert(0);
 }
 
 */
-void rcu_free(void *lock, void (*func)(void *ptr), void *ptr) {func(ptr);}
+void rp_free(void *lock, void (*func)(void *ptr), void *ptr) {func(ptr);}

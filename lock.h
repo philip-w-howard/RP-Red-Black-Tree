@@ -21,7 +21,7 @@ void write_unlock(void *lock);
 // optional routine
 void upgrade_lock(void *lock);
 
-#ifdef RCU
+#if defined(RCU) || defined(RP_STM)
 void rw_lock(void *lock);
 void rw_unlock(void *lock);
 #else

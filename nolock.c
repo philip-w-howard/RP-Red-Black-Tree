@@ -45,6 +45,6 @@ void read_lock(void *lock) { Thread_Stats[STAT_READ]++; }
 void read_unlock(void *lock) {}
 void write_lock(void *lock) { Thread_Stats[STAT_WRITE]++; }
 void write_unlock(void *lock) {}
-//void rcu_synchronize(void *lock) {}
-void rcu_free(void *lock, void (*func)(void *ptr), void *ptr) {func(ptr);}
+//void rp_wait_grace_period(void *lock) {}
+void rp_free(void *lock, void (*func)(void *ptr), void *ptr) {func(ptr);}
 

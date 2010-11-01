@@ -548,7 +548,7 @@ void *rb_remove(rbtree_t *tree, long key)
     if (node != NULL)
     {
         value = LOAD(node->value);
-        rcu_free(tree->lock, rbnode_free, node);
+        rp_free(tree->lock, rbnode_free, node);
     }
     else 
     {

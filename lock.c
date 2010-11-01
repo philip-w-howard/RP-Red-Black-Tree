@@ -58,8 +58,8 @@ void write_unlock(void *lock)
     //printf("write unlock %p\n", lock);
     pthread_mutex_unlock( (pthread_mutex_t *)lock);
 }
-//void rcu_synchronize(void *lock) {}
-void rcu_free(void *lock, void (*func)(void *ptr), void *ptr) {func(ptr);}
+//void rp_wait_grace_period(void *lock) {}
+void rp_free(void *lock, void (*func)(void *ptr), void *ptr) {func(ptr);}
 
 //**********************************************
 unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
