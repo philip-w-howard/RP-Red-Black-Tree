@@ -141,7 +141,24 @@ rbnode_t *rbnode_create(long key, void *value)
 rbnode_t *rbnode_copy(rbnode_t *node)
 {
 	rbnode_t *newnode = (rbnode_t *)rb_alloc();
+#ifdef STM
+    STORE(newnode->key, LOAD(node->key));
+    STORE(newnode->value, LOAD(node->value));
+    STORE(newnode->left, LOAD(node->left));
+    STORE(newnode->right, LOAD(node->right));
+    STORE(newnode->parent, LOAD(node->parent));
+    // NOTE: not multi-writer safe. we'll ignore that. Index isn't that important
+	newnode->index = Index++;
+    STORE(newnode->color, LOAD(node->color));
+
+    // the following aren't used except for FG and AVL: lock, height, changeOVL
+
+	if (LOAD(node->left)  != NULL)  STORE(LOAD(node->left)->parent, newnode);
+	if (LOAD(node->right)  != NULL) STORE(LOAD(node->right)->parent, newnode);
+#else
 	memcpy(newnode, node, sizeof(rbnode_t));
+#endif
+    // NOTE: not multi-writer safe, but we'll ignore that. Index isn't that important
 	newnode->index = Index++;
 
 	if (node->left  != NULL) node->left->parent  = newnode;

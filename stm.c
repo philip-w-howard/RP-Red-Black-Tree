@@ -34,13 +34,8 @@ static pthread_mutex_t Lock = PTHREAD_MUTEX_INITIALIZER;
 
 #ifdef RP_STM
 
-#ifdef MULTIWRITERS
-#define RCU_MAX_BLOCKS      500
-#define BLOCKS_FOR_FREE     5
-#else
 #define RCU_MAX_BLOCKS      20
 #define BLOCKS_FOR_FREE     (RCU_MAX_BLOCKS-2)
-#endif
 
 #define RWL_READ_INC        2
 #define RWL_ACTIVE_WRITER_FLAG 1
@@ -312,7 +307,7 @@ void write_unlock(void *vlock)
 {
     rp_lock_t *lock = (rp_lock_t *)vlock;
 
-   //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) != 0);
+   assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) != 0);
     AO_fetch_and_add_full(&lock->reader_count_and_flag, -1);
     AO_fetch_and_add_full(&lock->write_completions, 1);
 }
@@ -379,9 +374,7 @@ void rp_wait_grace_period(void *lock)
         list = list->next;
     }
 
-#ifdef MULTIWRITERS
     write_lock(lock);
-#endif
 
     //printf("rp_wait_grace_period is freeing memory\n");
     // since a grace period just expired, we might as well clear out the
@@ -399,9 +392,7 @@ void rp_wait_grace_period(void *lock)
 
     rp_lock->block.head = 0;
 
-#ifdef MULTIWRITERS
     write_unlock(lock);
-#endif
 }
 
 void rp_free(void *lock, void (*func)(void *ptr), void *ptr)
@@ -409,41 +400,18 @@ void rp_free(void *lock, void (*func)(void *ptr), void *ptr)
     rp_lock_t *rp_lock = (rp_lock_t *)lock;
     int head;
 
+    func = rbnode_free;
+
     assert(ptr != NULL);
-#ifdef MULTIWRITERS
-    // we need to loop until we have the write_lock AND space for our block
-    // If there isn't space, we need to release the write_lock to allow
-    // the polling thread to free space
 
     write_lock(lock);
-    while (rp_lock->block.head >= RCU_MAX_BLOCKS)
-    {
-        write_unlock(lock);
-        //assert( (rp_lock->reader_count_and_flag & 0x0001) == 0);
-        // wait for polling thread to free memory
-        lock_mb();
-
-        write_lock(lock);
-    }
-
-    assert(rp_lock->block.head >= 0 && rp_lock->block.head < RCU_MAX_BLOCKS);
-#else
     if (rp_lock->block.head >= BLOCKS_FOR_FREE) 
     {
         Thread_Stats[STAT_FREE_SYNC]++;
+        write_unlock(lock);
         rp_wait_grace_period(lock);
+        write_lock(lock);
     }
-#endif
-
-    /*
-    {
-        int ii;
-        for (ii=0; ii<rp_lock->block.head; ii++)
-        {
-            assert(ptr != rp_lock->block.block[ii].block);
-        }
-    }
-    */
 
     Thread_Stats[STAT_FREE]++;
     head = rp_lock->block.head;
@@ -452,10 +420,7 @@ void rp_free(void *lock, void (*func)(void *ptr), void *ptr)
     head++;
     rp_lock->block.head = head;
 
-#ifdef MULTIWRITERS
     write_unlock(lock);
-#endif
-
 }
 //*****************************************************
 int rp_poll(void *lock)

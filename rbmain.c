@@ -37,7 +37,7 @@ unsigned long init_random_seed()
     clock_gettime(CLOCK_REALTIME, &cur_time);
     seed = cur_time.tv_sec + cur_time.tv_nsec;
 
-//seed = 12348234767;
+seed = 12348234767;
 
     return seed;
 }
@@ -276,6 +276,8 @@ void parse_args(int argc, char *argv[])
             case 'u':
                 Params.update_percent = atoi(value);
                 if (Params.update_percent < 0) usage(argc, argv, argv[ii]);
+                Params.delete_percent = Params.update_percent/2;
+                Params.insert_percent = Params.update_percent/2;
                 break;
             case 'w':
                 Params.writers = atoi(value);
@@ -291,7 +293,7 @@ void parse_args(int argc, char *argv[])
 void thread_stuck(int id)
 {
     fprintf(stderr, "Thread %d failed to terminate\n", id);
-    //sleep(100000);
+    sleep(100000);
     //exit(-4);
 }
 int main(int argc, char *argv[])
