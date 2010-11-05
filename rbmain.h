@@ -71,6 +71,7 @@ typedef struct
     int update_percent;             // number out of UPDATE_MAX that are updates
     int insert_percent;
     int delete_percent;
+    int stm_stats;
 } param_t;
 
 unsigned long init_random_seed();

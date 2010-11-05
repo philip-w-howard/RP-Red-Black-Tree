@@ -27,7 +27,7 @@
 
 volatile int goflag = GOFLAG_INIT;
 
-param_t Params = {64, 10000, 1, MODE_READ, NUM_CPUS, 0, 0, 0, 0, 0, 0};
+param_t Params = {64, 10000, 1, MODE_READ, NUM_CPUS, 0, 0, 0, 0, 0, 0, 0};
 
 unsigned long init_random_seed()
 {
@@ -203,7 +203,7 @@ void usage(int argc, char *argv[], char *bad_arg)
     if (bad_arg != NULL) fprintf(stderr, "Invalid param %s\n", bad_arg);
 
 	fprintf(stderr, 
-       "Usage: %s [c:<CPUS>] [d:<delete %%>] [i:<insert %%] [m:<READ | WRITE | RAND>] [R:<run time>] [s:<tree size>] [S:<tree scale>] [w:<writers>] [r:<readers>] [u:<update %%>]\n",
+       "Usage: %s [c:<CPUS>] [d:<delete %%>] [i:<insert %%] [m:<READ | WRITE | RAND>] [R:<run time>] [s:<tree size>] [S:<tree scale>] [t] [w:<writers>] [r:<readers>] [u:<update %%>]\n",
 
        argv[0]);
 	exit(-1);
@@ -281,6 +281,9 @@ void parse_args(int argc, char *argv[])
             case 'S':
                 Params.scale = atoi(value);
                 if (Params.scale < 10) usage(argc, argv, argv[ii]);
+                break;
+            case 't':
+                Params.stm_stats = 1;
                 break;
             case 'u':
                 Params.update_percent = atoi(value);
@@ -422,7 +425,7 @@ int main(int argc, char *argv[])
     Output_Stats(my_data);
 
 #ifdef STM
-//	wlpdstm_print_stats();
+    if (Params.stm_stats) wlpdstm_print_stats();
 #endif
     return 0;
 }

@@ -1,9 +1,3 @@
-/* wlpdstm_global_init();
- wlpdstm_thread_init();
- wlpdstm_tx_malloc(size);
- wlpdstm_tx_free(ptr, size);
- wlpdstm_print_stats();
-*/
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
@@ -65,8 +59,8 @@ typedef struct
         epoch_list_t *epoch_list;
     volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         AO_t rp_epoch;
-    volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
-        block_list_t block;
+//    volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
+//        block_list_t block;
     __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         AO_t write_requests;
     __attribute__((__aligned__(CACHE_LINE_SIZE))) 
@@ -79,6 +73,10 @@ typedef struct
 
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         epoch_list_t *Thread_Epoch;
+
+static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
+    block_list_t To_Be_Freed;
+
 #endif
 
 //**********************************************
@@ -127,6 +125,9 @@ void lock_thread_init(void *lock, int thread_id)
     // create a thread private epoch 
     Thread_Epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
     
+    // init the per thread to-be-freed list
+    To_Be_Freed.head = 0;
+
 	/* guard against multiple thread start-ups and grace periods */
 	write_lock(lock);
 
@@ -154,7 +155,7 @@ void *lock_init()
     lock->epoch_list = NULL;
     lock->rp_epoch = 0;
 
-    lock->block.head = 0;
+    //lock->block.head = 0;
     pthread_mutex_init(&lock->rp_writer_lock, NULL);
 
     AO_store(&lock->write_requests, 0);
@@ -324,7 +325,7 @@ void rp_free(void *lock, void (*func)(void *ptr), void *ptr) { func(ptr); }
 
 void DO_STORE(Word *a, Word b)
 {
-    printf("STORE(%p, %llX)\n", a, b);
+    //printf("STORE(%p, %llX)\n", a, b);
     wlpdstm_write_word(a, b);
 }
 //**********************************************
@@ -336,7 +337,7 @@ void rp_wait_grace_period(void *lock)
     int head;
     AO_t epoch;
     pthread_t self;
-    static int max_head = 0;
+    //static int max_head = 0;
 
     Thread_Stats[STAT_SYNC]++;
     
@@ -367,62 +368,69 @@ void rp_wait_grace_period(void *lock)
             Thread_Stats[STAT_SPINS]++;
             // wait
             lock_mb();
-            assert(rp_lock->block.head < (RCU_MAX_BLOCKS-1));
-            if (max_head < rp_lock->block.head) max_head = rp_lock->block.head;
+            //assert(rp_lock->block.head < (RCU_MAX_BLOCKS-1));
+            //if (max_head < rp_lock->block.head) max_head = rp_lock->block.head;
             //printf("head: %d %d\n", rp_lock->block.head, max_head);
         }
         list = list->next;
     }
 
-    write_lock(lock);
+    //write_lock(lock);
 
     //printf("rp_wait_grace_period is freeing memory\n");
     // since a grace period just expired, we might as well clear out the
     // delete buffer
-    head = rp_lock->block.head;
+    //head = rp_lock->block.head;
+    head = To_Be_Freed.head;
     //printf("RCU is freeing %d blocks\n", head);
     while (head > 0)
     {
         void (*func)(void *ptr);
 
         head--;
-        func = rp_lock->block.block[head].func;
-        func(rp_lock->block.block[head].block);
+        //func = rp_lock->block.block[head].func;
+        //func(rp_lock->block.block[head].block);
+        func = To_Be_Freed.block[head].func;
+        func(To_Be_Freed.block[head].block);
     }
 
-    rp_lock->block.head = 0;
+    //rp_lock->block.head = 0;
+    To_Be_Freed.head = 0;
 
-    write_unlock(lock);
+    //write_unlock(lock);
 }
 
 void rp_free(void *lock, void (*func)(void *ptr), void *ptr)
 {
-    rp_lock_t *rp_lock = (rp_lock_t *)lock;
+    //rp_lock_t *rp_lock = (rp_lock_t *)lock;
     int head;
 
     func = rbnode_free;
 
     assert(ptr != NULL);
 
-    write_lock(lock);
-    if (rp_lock->block.head >= BLOCKS_FOR_FREE) 
+    //write_lock(lock);
+    //if (rp_lock->block.head >= BLOCKS_FOR_FREE) 
+    if (To_Be_Freed.head >= BLOCKS_FOR_FREE) 
     {
         Thread_Stats[STAT_FREE_SYNC]++;
-        write_unlock(lock);
+        //write_unlock(lock);
         rp_wait_grace_period(lock);
-        write_lock(lock);
+        //write_lock(lock);
     }
 
     Thread_Stats[STAT_FREE]++;
-    head = rp_lock->block.head;
-    rp_lock->block.block[head].block = ptr;
-    rp_lock->block.block[head].func = func;
+    head = To_Be_Freed.head;
+    To_Be_Freed.block[head].block = ptr;
+    To_Be_Freed.block[head].func = func;
     head++;
-    rp_lock->block.head = head;
+    To_Be_Freed.head = head;
 
-    write_unlock(lock);
+    //write_unlock(lock);
 }
+
 //*****************************************************
+#ifdef REMOVE
 int rp_poll(void *lock)
 {
     rp_lock_t *rp_lock = (rp_lock_t *)lock;
@@ -435,5 +443,6 @@ int rp_poll(void *lock)
 
     return 0;
 }
+#endif
 #endif
 
