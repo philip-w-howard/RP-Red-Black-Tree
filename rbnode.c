@@ -106,7 +106,7 @@ void rbnode_free(void *ptr)
         if (eptr->node.lock != NULL) free(eptr->node.lock);
 #endif
 #ifdef STM
-        wlpdstm_tx_free(ptr, sizeof(extended_node_t));
+        wlpdstm_free(eptr);
 #else
         free(eptr);
 #endif

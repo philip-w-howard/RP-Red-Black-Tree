@@ -27,6 +27,6 @@ void DO_STORE(Word *a, Word b);
 #endif
 
 #define RB_WAIT_GP(a)       wlpdstm_wait_grace_period((a))
-#define RP_FREE(a,b,c)      //wlpdstm_rp_free((a), (c))
+#define RP_FREE(a,b,c)      wlpdstm_rp_free((a), (c))
 #endif
 

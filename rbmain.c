@@ -247,6 +247,15 @@ void parse_args(int argc, char *argv[])
                     Params.mode = MODE_NOOP;
                 else if (strcmp(value, "RAND") == 0)
                     Params.mode = MODE_RANDOM;
+                else if (strcmp(value, "TEST") == 0)
+                {
+                    Params.mode = MODE_RANDOM;
+                    Params.update_percent = 1000000;
+                    Params.delete_percent = Params.update_percent/2;
+                    Params.insert_percent = Params.update_percent/2;
+                    Params.size = 64;
+                    Params.scale = 128;
+                }
                 else
                     usage(argc, argv, argv[ii]);
                 break;
