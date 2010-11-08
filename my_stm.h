@@ -4,8 +4,13 @@
 #include <stm.h>
 
 void DO_STORE(Word *a, Word b);
+//void stm_start();
+//void stm_write();
+//void stm_op_failed();
+//void stm_op_grand_failed();
 
 #define RB_START_RO_TX(a)  BEGIN_TRANSACTION
+
 #ifdef RP_STM
 //#define RB_START_TX(a)     read_lock((a)); BEGIN_TRANSACTION
 #define RB_START_TX(a)     BEGIN_TRANSACTION

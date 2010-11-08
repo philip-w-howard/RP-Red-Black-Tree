@@ -37,7 +37,7 @@ unsigned long init_random_seed()
     clock_gettime(CLOCK_REALTIME, &cur_time);
     seed = cur_time.tv_sec + cur_time.tv_nsec;
 
-seed = 12348234767;
+//seed = 12348234767;
 
     return seed;
 }
@@ -172,9 +172,9 @@ void *thread_func(void *arg)
                 else if (int_value < insert_percent+delete_percent)
                 {
                     if (Insert(&random_seed, &Params))
-                        n_write_fails++;
-                    else
                         n_writes++;
+                    else
+                        n_write_fails++;
                 }
                 else 
                 {

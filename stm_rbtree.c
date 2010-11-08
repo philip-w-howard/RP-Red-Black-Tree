@@ -345,10 +345,7 @@ static void recolor(rbtree_t *tree, rbnode_t *node)
         }
     }
 }
-//*******************************
-void static insert_failed()
-{
-}
+//****************************************************
 int rb_insert(rbtree_t *tree, long key, void *value)
 {
     int result = 1;
@@ -356,6 +353,8 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 
     //printf("rb_insert write_lock\n");
     RB_START_TX(tree->lock);
+
+    result = 1;
 
     //check_for(tree->root, new_node);
 
@@ -374,7 +373,6 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 			prev = node;
             if (key == LOAD(node->key))
             {
-                insert_failed();
                 result = 0;
                 break;
             }
@@ -457,7 +455,9 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
             if (r != NULL) STORE(r->color, BLACK);
             STORE(y->color, RED);
             if (LOAD(x->color) == RED)
+            {
                 STORE(x->color, BLACK);
+            }
             else
             {
                 STORE(x->color, BLACK_BLACK);
@@ -521,6 +521,8 @@ void *rb_remove(rbtree_t *tree, long key)
     int temp_color;
 
     RB_START_TX(tree->lock);
+
+    value = NULL;
 
 	node = find_node_tx(tree, key);
 
@@ -675,9 +677,11 @@ void *rb_remove(rbtree_t *tree, long key)
 
         RP_FREE(tree->lock, rbnode_free, node);
 
-    }
+    } 
+    
     //printf("rb_remove write_unlock\n");
     RB_COMMIT(tree->lock);
+
 	return value;
 }
 //***************************************

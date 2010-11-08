@@ -18,8 +18,12 @@
 #define STAT_SPINS  9
 #define STAT_SYNC   10
 #define STAT_RWSPINS  11
+//#define STM_OP_FAILS  11
 #define STAT_FREE   12
 #define STAT_FREE_SYNC 13
+//#define STM_START 14
+//#define STM_COMMIT 15
+//#define STM_WRITE  16
 
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
     unsigned long long Thread_Stats[NSTATS+1];
@@ -79,6 +83,33 @@ static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
 
 #endif
 
+static __thread int Stm_Write = 0;
+//**********************************************
+/*
+void stm_start()
+{
+    Thread_Stats[STM_START]++;
+    //Stm_Write = 0;
+}
+void stm_op_grand_failed()
+{
+    Thread_Stats[STM_OP_FAILS]++;
+}
+void stm_op_failed()
+{
+    Thread_Stats[STM_WRITE]++;
+}
+void stm_write()
+{
+    //Stm_Write = 1;
+}
+void rp_stm_commit()
+{
+    //if (Stm_Write) Thread_Stats[STM_WRITE]++;
+    //Stm_Write = 0;
+    Thread_Stats[STM_COMMIT]++;
+}
+*/
 //**********************************************
 unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
         unsigned long long c, unsigned long long d, unsigned long long e,
