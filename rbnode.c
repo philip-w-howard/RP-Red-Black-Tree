@@ -105,8 +105,10 @@ void rbnode_free(void *ptr)
 #ifdef FG_LOCK
         if (eptr->node.lock != NULL) free(eptr->node.lock);
 #endif
-#ifdef STM
+#ifdef RP_STM
         wlpdstm_free(eptr);
+#elif defined(STM)
+        wlpdstm_tx_free(eptr, sizeof(extended_node_t));
 #else
         free(eptr);
 #endif
