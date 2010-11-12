@@ -65,14 +65,14 @@ static int find(char **list, int list_size, char *key)
 }
 
 static void insert(char *test_name, int mode, int size, 
-        int readers, int writers,
+        int readers, int writers, int update,
         count_t reads, count_t writes)
 {
     int test, setup;
     info_t *node;
     char setup_name[500];
 
-    sprintf(setup_name, "%d\t%d\t%d\t%d", mode, size, readers, writers);
+    sprintf(setup_name, "%d\t%d\t%d\t%d\t%d", mode, size, readers, writers, update);
 
     test = find(Tests, MAX_TESTS, test_name);
     if (test >= Num_Tests) Num_Tests = test+1;
@@ -91,7 +91,7 @@ static void output(FILE *output)
 {
     int ii, jj;
 
-    fprintf(output, "mode\tsize\treaders\twriters");
+    fprintf(output, "mode\tsize\treaders\twriters\tupdate percent");
 
     for (ii=0; ii<Num_Tests; ii++)
     {
@@ -183,7 +183,7 @@ int main(int argc, char **argv)
 {
     char buff[1000];
     char *name, *c_mode, *c_size, *c_reads, *c_writes;
-    char *c_readers, *c_writers;
+    char *c_readers, *c_writers, *c_updatep;
     int line_count = 0;
     FILE *infile, *outfile;
 
@@ -223,20 +223,21 @@ int main(int argc, char **argv)
         c_size = strtok(NULL, " ");
         c_readers = strtok(NULL, " ");
         c_writers = strtok(NULL, " ");
+        c_updatep = strtok(NULL, " ");
         c_reads = strtok(NULL, " ");
         c_writes = strtok(NULL, " ");
 
         if (c_writes == NULL)
         {
             fprintf(stderr, "Invalid line at %d\n"
-                    "%s %s %s %s %s %s %s\n", line_count,
+                    "%s %s %s %s %s %s %s %s\n", line_count,
                     name, c_mode, c_size, 
-                    c_readers, c_writers, c_reads, c_writes);
+                    c_readers, c_writers, c_updatep, c_reads, c_writes);
             exit(-1);
         }
 
         insert(name, atoi(c_mode), atoi(c_size), 
-                atoi(c_readers), atoi(c_writers),
+                atoi(c_readers), atoi(c_writers), atoi(c_updatep),
                 atoll(c_reads), atoll(c_writes));
     }
 

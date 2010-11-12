@@ -13,7 +13,6 @@
 //#define rp_free(l, f, p) defer_rcu(f,p)
 void rp_wait_grace_period(void *lock);
 void rp_free(void *lock, void (*func)(void *ptr), void *ptr);
-#define rp_poss(a) ({ 0; })
 
 #elif defined(RCU) || defined(NO_GRACE_PERIOD)
 
@@ -27,15 +26,14 @@ int rp_poll(void *lock);
 #elif defined(RP_STM)
 
 void rp_free(void *lock, void (*func)(void *ptr), void *ptr);
-#define rp_dereference(p) (*(volatile typeof(p) *)&(p))
-#define rp_assign_pointer(p, v) ({ lock_mb(); (p) = (v); })
+//#define rp_dereference(p) (*(volatile typeof(p) *)&(p))
+//#define rp_assign_pointer(p, v) ({ lock_mb(); (p) = (v); })
 
 #else
 
 #define rp_assign_pointer(p,v) ({(p) = (v);})
 #define rp_dereference(p) (*(volatile typeof(p) *)&(p))
 #define rp_free(l,f,a) ({ (f)( (a) ); })
-#define rp_poss(a) ({ 0; })
 
 #endif
 #endif  // __RCU_H

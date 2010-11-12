@@ -8,13 +8,13 @@ RCUFLAGS = -DRCU
 MULTIFLAGS = -DMULTIWRITERS
 AVLFLAGS = $(RCUFLAGS) $(MULTIFLAGS) -DRCU_USE_MUTEX $(FGFLAGS)
 STMFLAGS = -DSTM -I/u/pwh/swissTM/swissTM_word/include # -DRP_STM
-CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) -O0 # -pg 
+CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) -O3 # -pg 
 LFLAGS = -lrt $(CFLAGS)
 STM_LFLAGS = -L/u/pwh/swissTM/swissTM_word/lib -lwlpdstm
 
 CC = gcc
 
-TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock ll_rwlr rb_stm stmtest parse # ngp rbl_rcu ccavl rpavl rwlravl rwlwavl lockavl nolockavl fgl rcumulti rcutest rb_fg # rb_urcu urcutest 
+TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock ll_rwlr rb_stm parse # ngp rbl_rcu ccavl rpavl rwlravl rwlwavl lockavl nolockavl fgl rcumulti rcutest rb_fg # rb_urcu urcutest 
 all: $(TARGETS)
 
 stuff: aotest

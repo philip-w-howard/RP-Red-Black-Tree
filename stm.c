@@ -1,3 +1,4 @@
+#include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
@@ -124,7 +125,14 @@ unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
 
     return Thread_Stats;
 }
-char *implementation_name() { return "STM"; }
+char *implementation_name() 
+{ 
+#ifdef RP_STM
+    return "RP_STM";
+#else
+    return wlpdstm_version();
+#endif
+}
 //**********************************************
 void lock_thread_init(void *lock, int thread_id)
 {

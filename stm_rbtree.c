@@ -88,7 +88,7 @@ static rbnode_t *find_node_tx(rbtree_t *tree, long key)
 //*******************************
 void *rb_find(rbtree_t *tree, long key)
 {
-    void *value;
+    void *value = NULL;
 
 #ifdef RP_STM
     read_lock(tree->lock);

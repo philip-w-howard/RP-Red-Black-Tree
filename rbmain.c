@@ -305,8 +305,8 @@ void parse_args(int argc, char *argv[])
 void thread_stuck(int id)
 {
     fprintf(stderr, "Thread %d failed to terminate\n", id);
-    sleep(100000);
-    //exit(-4);
+    //sleep(100000);
+    exit(-4);
 }
 int main(int argc, char *argv[])
 {
@@ -326,10 +326,10 @@ int main(int argc, char *argv[])
         tot_stats[ii] = 0;
     }
 
-    printf("Test: %s %d readers %d writers %d mode %d %d %d\n", 
-            argv[0], Params.size,
+    printf("Test: %s %d readers %d writers %d mode %d %d %d %d\n", 
+            implementation_name(), Params.size,
             Params.readers, Params.writers, Params.mode, Params.scale, 
-            NUM_CPUS);
+            NUM_CPUS, Params.update_percent);
 
     lock = lock_init();
     lock_thread_init(lock, 0);

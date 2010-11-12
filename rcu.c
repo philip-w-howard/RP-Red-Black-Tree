@@ -11,7 +11,7 @@
 
 char *implementation_name()
 {
-    return "RCU";
+    return "RP";
 }
 
 #define NSTATS      13
