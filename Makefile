@@ -1,6 +1,14 @@
+ifeq ($(ARCH_NAME), )
+	ARCH_NAME = $(shell uname -m)
+endif
 
-ARCHFLAGS = -pthread -g
-#ARCHFLAGS = -Wa,-xarch=v8plus
+ifeq ($(ARCH_NAME), x86_64)
+    ARCHFLAGS = -pthread -g
+endif
+
+ifeq ($(ARCH_NAME), sun4v)
+    ARCHFLAGS = -Wa,-xarch=v8plus
+endif
 
 URCUFLAGS = -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE
 FGFLAGS = -DFG_LOCK
