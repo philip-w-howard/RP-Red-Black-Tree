@@ -1,3 +1,10 @@
+This repository contains several red-black tree implementations and code for 
+benchmarking them. A number of synchronization mechanisms are also provided.
+Of particular notice is the user mode Relativistic Programming implementation
+provided in rcu.c
+
+This software is released under the terms of the MIT license as follows:
+
 Copyright (c) 2010 Philip W. Howard
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
