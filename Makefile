@@ -15,14 +15,14 @@ FGFLAGS = -DFG_LOCK
 RCUFLAGS = -DRCU
 MULTIFLAGS = -DMULTIWRITERS
 AVLFLAGS = $(RCUFLAGS) $(MULTIFLAGS) -DRCU_USE_MUTEX $(FGFLAGS)
-STMFLAGS = -DSTM -I/u/pwh/swissTM/swissTM_word/include # -DRP_STM
-CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) -O3 # -pg 
+STMFLAGS = -DSTM -I/u/pwh/swissTM/swissTM_word/include -DRP_FINDS # -DRPSTM_STATS # -DRP_STM 
+CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) -O0 # -pg 
 LFLAGS = -lrt $(CFLAGS)
 STM_LFLAGS = -L/u/pwh/swissTM/swissTM_word/lib -lwlpdstm
 
 CC = gcc
 
-TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock ll_rwlr rb_stm parse # ngp rbl_rcu ccavl rpavl rwlravl rwlwavl lockavl nolockavl fgl rcumulti rcutest rb_fg # rb_urcu urcutest 
+TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock ll_rwlr rb_stm stmbad parse # ngp rbl_rcu ccavl rpavl rwlravl rwlwavl lockavl nolockavl fgl rcumulti rcutest rb_fg # rb_urcu urcutest 
 all: $(TARGETS)
 
 stuff: aotest
@@ -74,6 +74,10 @@ rb_stm: rbmain.c stm_rbtree.c rbtest.c rbnode.c stm.c rbtree.c
 	$(CC) -c stm_rbtree.c $(CFLAGS) $(STMFLAGS)
 	$(CC) -c rbtest.c $(CFLAGS) $(STMFLAGS)
 	$(CC) -o rb_stm $(LFLAGS) rbmain.c rbtest.o rbnode.o stm_rbtree.o stm.o $(STMFLAGS) $(STM_LFLAGS) 
+
+stmbad: stmbad.c stm.c
+	$(CC) -c stm.c $(CFLAGS) $(STMFLAGS)
+	$(CC) -o stmbad $(LFLAGS) stmbad.c stm.o $(STMFLAGS) $(STM_LFLAGS) 
 
 rwlravl: rbmain.c rpavl.c avl.h rwl_read.o rbtest.o
 	$(CC) -c rbnode.c $(CFLAGS) 

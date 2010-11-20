@@ -33,7 +33,7 @@
 #include "atomic_ops.h"
 #endif
 
-#define NSTATS      13
+#define NSTATS      16
 #define STAT_READ   7
 #define STAT_WRITE  8
 #define STAT_SPINS  9
@@ -42,9 +42,9 @@
 //#define STM_OP_FAILS  11
 #define STAT_FREE   12
 #define STAT_FREE_SYNC 13
-//#define STM_START 14
-//#define STM_COMMIT 15
-//#define STM_WRITE  16
+#define STM_START  14
+#define STM_LOAD   15
+#define STM_STORE  16
 
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
     unsigned long long Thread_Stats[NSTATS+1];
@@ -106,12 +106,11 @@ static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
 
 static __thread int Stm_Write = 0;
 //**********************************************
-/*
-void stm_start()
+void stm_stats(int index)
 {
-    Thread_Stats[STM_START]++;
-    //Stm_Write = 0;
+    Thread_Stats[index]++;
 }
+/*
 void stm_op_grand_failed()
 {
     Thread_Stats[STM_OP_FAILS]++;
@@ -147,7 +146,9 @@ unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
 }
 char *implementation_name() 
 { 
-#ifdef RP_STM
+#ifdef RP_FINDS
+    return "RP_FINDS";
+#elif defined(RP_STM)
     return "RP_STM";
 #else
     return wlpdstm_version();
@@ -382,10 +383,27 @@ void rp_wait_grace_period(void *lock) {}
 void rp_free(void *lock, void (*func)(void *ptr), void *ptr) { func(ptr); }
 #endif
 
+Word DO_LOAD(Word *a)
+{
+    //printf("STORE(%p, %llX)\n", a, b);
+    Thread_Stats[STM_LOAD]++;
+    return wlpdstm_read_word(a);
+}
 void DO_STORE(Word *a, Word b)
 {
     //printf("STORE(%p, %llX)\n", a, b);
+    Thread_Stats[STM_STORE]++;
     wlpdstm_write_word(a, b);
+}
+void DO_STORE_MB(Word *a, Word b)
+{
+    //printf("STORE(%p, %llX)\n", a, b);
+    Thread_Stats[STM_STORE]++;
+#ifdef RP_STM
+    wlpdstm_write_word_mb(a, b);
+#else
+    wlpdstm_write_word(a, b);
+#endif
 }
 //**********************************************
 #ifdef RP_STM

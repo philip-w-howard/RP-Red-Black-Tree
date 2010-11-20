@@ -46,7 +46,7 @@ int rp_poll(void *lock);
 #elif defined(RP_STM)
 
 void rp_free(void *lock, void (*func)(void *ptr), void *ptr);
-//#define rp_dereference(p) (*(volatile typeof(p) *)&(p))
+#define rp_dereference(p) (*(volatile typeof(p) *)&(p))
 //#define rp_assign_pointer(p, v) ({ lock_mb(); (p) = (v); })
 
 #else

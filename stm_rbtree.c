@@ -94,10 +94,11 @@ static rbnode_t *find_node(rbtree_t *tree, long key)
 static rbnode_t *find_node_tx(rbtree_t *tree, long key)
 {
 	rbnode_t *node = LOAD(tree->root);
+    long node_key;
 
-	while (node != NULL && key != LOAD(node->key))
+	while (node != NULL && key != (node_key=LOAD(node->key)))
 	{
-		if (key < LOAD(node->key)) 
+		if (key < node_key)
             node = LOAD(node->left);
 		else 
             node = LOAD(node->right);
@@ -370,6 +371,7 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 {
     int result = 1;
     rbnode_t *new_node;
+    long node_key;
 
     //printf("rb_insert write_lock\n");
     RB_START_TX(tree->lock);
@@ -378,6 +380,31 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 
     //check_for(tree->root, new_node);
 
+#ifdef RP_FINDS
+	if (tree->root == NULL)
+	{
+        new_node = rbnode_create(key, value);
+
+        STORE(new_node->color, BLACK);
+		STORE_MB(tree->root, new_node);
+	} else {
+		rbnode_t *node = tree->root;
+		rbnode_t *prev = node;
+
+		while (node != NULL)
+		{
+			prev = node;
+            if (key == (node_key=node->key))
+            {
+                result = 0;
+                break;
+            }
+            else if (key <= node_key)
+				node = (node->left);
+			else 
+				node = (node->right);
+		}
+#else
 	if (LOAD(tree->root) == NULL)
 	{
         new_node = rbnode_create(key, value);
@@ -391,16 +418,17 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 		while (node != NULL)
 		{
 			prev = node;
-            if (key == LOAD(node->key))
+            if (key == (node_key=LOAD(node->key)))
             {
                 result = 0;
                 break;
             }
-            else if (key <= LOAD(node->key)) 
+            else if (key <= node_key)
 				node = LOAD(node->left);
 			else 
 				node = LOAD(node->right);
 		}
+#endif
 
         // if key isn't already in the tree, insert it
         if (result != 0)
@@ -544,7 +572,11 @@ void *rb_remove(rbtree_t *tree, long key)
 
     value = NULL;
 
+#ifdef RP_FINDS
+	node = find_node(tree, key);
+#else
 	node = find_node_tx(tree, key);
+#endif
 
     // if found
 	if (node != NULL) 
