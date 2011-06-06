@@ -3,6 +3,8 @@
 #include "tests.h"
 #include "rbmain.h"
 
+void check_tree();
+
 unsigned long *Values;
 rbtree_t      *My_Tree;
 
@@ -124,7 +126,21 @@ int Delete(unsigned long *random_seed, param_t *params)
 
     return errors;
 }
-static void check_tree()
+#ifdef RP_UPDATE
+int Update(unsigned long *random_seed, param_t *params)
+{
+    int errors = 0;
+    void *value;
+    long int_value;
+
+    int_value = get_random(random_seed) % params->scale + 1;
+    value = rb_update(My_Tree, int_value);
+    if (value == NULL) errors++;
+
+    return errors;
+}
+#endif
+void check_tree()
 {
     if (!rb_valid(My_Tree)) 
     {

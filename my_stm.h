@@ -67,7 +67,7 @@ void stm_stats(int index);
   #endif
 #endif
 
-#define RB_WAIT_GP(a)       wlpdstm_wait_grace_period((a))
+#define RP_WAIT_GP(a)       wlpdstm_wait_grace_period((a))
 #ifdef RP_STM
 #define RP_FREE(a,b,c)      wlpdstm_rp_free((a), (c))
 #else

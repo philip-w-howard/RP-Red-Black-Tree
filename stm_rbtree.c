@@ -45,7 +45,16 @@ static char *toString(rbnode_t *node)
     static char buff[100];
     char *color = "BRb";
     if (node == NULL) return "NULL";
-    sprintf(buff, "%c%ld", color[node->color], node->key);
+    sprintf(buff, "%c%ld", color[LOAD(node->color)], LOAD(node->key));
+    return buff;
+}
+char *toLongString(rbnode_t *node)
+{
+    static char buff[100];
+    char *color = "BRb";
+    if (node == NULL) return "NULL";
+    sprintf(buff, "%c%ld:%s,%s", color[LOAD(node->color)], LOAD(node->key),
+            toString(LOAD(node->left)), toString(LOAD(node->right)));
     return buff;
 }
 //*******************************
@@ -76,9 +85,15 @@ void rb_create(rbtree_t *tree, void *lock)
 static rbnode_t *find_node(rbtree_t *tree, long key)
 {
 	rbnode_t *node = rp_dereference(tree->root);
+#ifdef RP_UPDATE
+    void *value;
+#endif
 
 	while (node != NULL && key != node->key)
 	{
+#ifdef RP_UPDATE
+        value = node->value;
+#endif
 		if (key < node->key) 
             node = rp_dereference(node->left);
 		else 
@@ -95,9 +110,15 @@ static rbnode_t *find_node_tx(rbtree_t *tree, long key)
 {
 	rbnode_t *node = LOAD(tree->root);
     long node_key;
+#ifdef RP_UPDATE
+    void *value;
+#endif
 
 	while (node != NULL && key != (node_key=LOAD(node->key)))
 	{
+#ifdef RP_UPDATE
+        value = LOAD(node->value);
+#endif
 		if (key < node_key)
             node = LOAD(node->left);
 		else 
@@ -109,7 +130,7 @@ static rbnode_t *find_node_tx(rbtree_t *tree, long key)
 //*******************************
 void *rb_find(rbtree_t *tree, long key)
 {
-    void *value = NULL;
+    void *value;
 
 #ifdef RP_STM
     read_lock(tree->lock);
@@ -164,7 +185,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
     if (LOAD(grandparent->left) == parent && LOAD(parent->left) == node)
     {
         // diag left
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
         cprime = rbnode_copy(grandparent);
         //NOSTATS tree->restructure_copies++;
         bprime = parent;
@@ -194,14 +215,14 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
             STORE(bprime->parent, NULL);
             STORE_MB(tree->root, bprime);
         }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
         RP_FREE(tree->lock, rbnode_free, grandparent);
 #endif
     } 
     else if (LOAD(grandparent->left) == parent && LOAD(parent->right) == node)
     {
         // zig left
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
         cprime = rbnode_copy(grandparent);
         aprime = rbnode_copy(parent);
         bprime = node;
@@ -241,7 +262,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
             STORE(bprime->parent, NULL);
             STORE_MB(tree->root, bprime);
         }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
         RP_FREE(tree->lock, rbnode_free, parent);
         RP_FREE(tree->lock, rbnode_free, grandparent);
 #endif
@@ -249,7 +270,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
     else if (LOAD(parent->right) == node && LOAD(grandparent->right) == parent)
     {
         // diag right
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
         aprime = rbnode_copy(grandparent);
         //NOSTATS tree->restructure_copies++;
         bprime = parent;
@@ -278,14 +299,14 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
             STORE(bprime->parent, NULL);
             STORE_MB(tree->root, bprime);
         }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
         RP_FREE(tree->lock, rbnode_free, grandparent);
 #endif
     }
     else
     {
         // zig right
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
         aprime = rbnode_copy(grandparent);
         cprime = rbnode_copy(parent);
         bprime = node;
@@ -325,7 +346,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
             STORE(bprime->parent, NULL);
             STORE_MB(tree->root, bprime);
         }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
         RP_FREE(tree->lock, rbnode_free, parent);
         RP_FREE(tree->lock, rbnode_free, grandparent);
 #endif
@@ -404,7 +425,7 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 			else 
 				node = (node->right);
 		}
-#else
+#else // not RP_FINDS
 	if (LOAD(tree->root) == NULL)
 	{
         new_node = rbnode_create(key, value);
@@ -522,7 +543,7 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
         else 
             z = LOAD(y->right);
         restructure(tree, x,y,z, &a, &b, &c);
-#if defined(RCU) || defined(NO_GRACE_PERIOD)
+#if defined(RCU) || defined(NO_GRACE_PERIOD) || defined(RP_STM)
 		// in RCU version, x always gets replaced. Figure out if it's c or a
         // NOTE: this is guaranteed to be a restructure that involves a single
         //       node copy, not a triple node copy
@@ -558,6 +579,46 @@ static void double_black(rbtree_t *tree, rbnode_t *r)
 		double_black_node(tree, x,y,r);
 	}
 }
+#ifdef RP_UPDATE
+//*******************************
+void *rb_update(rbtree_t *tree, long key)
+{
+	rbnode_t *node;
+	rbnode_t *prev_prev = NULL;
+	rbnode_t *prev = NULL;
+	rbnode_t *next = NULL;
+	void *value = NULL;
+
+    RB_START_TX(tree->lock);
+
+    value = NULL;
+
+#ifdef RP_FINDS
+	node = find_node(tree, key);
+#else
+	node = find_node_tx(tree, key);
+#endif
+
+    // if found
+	if (node != NULL) 
+    {
+        prev = LOAD(node->parent);
+        if (prev != NULL) prev_prev = LOAD(prev->parent);
+        next = LOAD(node->left);
+        if (next == NULL) next = LOAD(node->right);
+        value = LOAD(node->value);
+
+        if (prev_prev != NULL) STORE(prev_prev->value, LOAD(prev_prev->value)+1);
+        if (prev != NULL) STORE(prev->value, LOAD(prev->value)+1);
+        STORE(node->value, LOAD(node->value)+1);
+        if (next != NULL) STORE(next->value, LOAD(next->value)+1);
+    }
+
+    RB_COMMIT(tree->lock);
+
+    return value;
+}
+#endif // RP_UPDATE
 //*******************************
 void *rb_remove(rbtree_t *tree, long key)
 {
@@ -612,7 +673,7 @@ void *rb_remove(rbtree_t *tree, long key)
                 prev = swap;
                 next = LOAD(swap->right);
             } else {
-#if defined(RCU) || defined(NO_GRACE_PERIOD)
+#if defined(RCU) || defined(NO_GRACE_PERIOD) || defined(RP_STM)
                 // exchange children of swap and node
                 rbnode_t *new_node = rbnode_copy(swap);
                 //check_for(tree->root, new_node);
@@ -637,7 +698,7 @@ void *rb_remove(rbtree_t *tree, long key)
                 }
 
                 // need to make sure bprime is seen before path to b is erased 
-                RB_WAIT_GP(tree->lock);
+                RP_WAIT_GP(tree->lock);
                 //NOSTATS tree->grace_periods++;
 
                 prev = LOAD(swap->parent);
@@ -917,9 +978,10 @@ static void output_list(rbnode_t *node, int depth)
     if (node != NULL)
     {
         output_list(node->left, depth+1);
-        printf("depth: %d value: %s", depth, toString(node));
-        printf(" l: %s", toString(node->left));
-        printf(" r: %s", toString(node->right));
+        printf("%p depth: %d value: %s", node, depth, toString(node));
+        printf(" l: %p %s", node->left, toString(node->left));
+        printf(" r: %p %s", node->right, toString(node->right));
+        printf(" p: %p %s", node->parent, toString(node->parent));
         if (rbnode_invalid(node, depth)) 
             printf(" INVALID NODE: %d\n", rbnode_invalid(node, depth));
         else
@@ -966,13 +1028,13 @@ void output(rbnode_t *node, int depth)
     }
 
 
-    output(node->left, depth+1);
+    output(LOAD(node->left), depth+1);
 
     strcat(o_rows[depth], toString(node));
     assert( (strlen(o_rows[depth]) < MAX_ROW_LENGTH) );
     o_resize();
 
-    output(node->right, depth+1);
+    output(LOAD(node->right), depth+1);
 }
 //**************************************
 void rb_output_list(rbtree_t *tree)
@@ -985,7 +1047,9 @@ void rb_output(rbtree_t *tree)
 {
     int ii;
 
-    output(tree->root, 0);
+    RB_START_TX(tree->lock);
+    output(LOAD(tree->root), 0);
+    RB_COMMIT(tree->lock);
 
     for (ii=0; ii<o_nrows; ii++)
     {

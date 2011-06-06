@@ -34,7 +34,7 @@ char *implementation_name()
     return "RP";
 }
 
-#define NSTATS      13
+#define NSTATS      16
 #define STAT_READ   7
 #define STAT_WRITE  8
 #define STAT_SPINS  9
@@ -445,4 +445,25 @@ int rp_poll(void *lock)
 
     return 0;
 }
+//******************************************************
+//#include "my_stm.h"
+/*
+void link_to_stm_lib()
+{
+    wlpdstm_global_init();
+    wlpdstm_thread_init();
+    wlpdstm_print_stats();
+    wlpdstm_tx_malloc(0);
+    wlpdstm_free(NULL);
+    wlpdstm_get_long_jmp_buf(NULL);
+    wlpdstm_start_tx();
+    wlpdstm_commit_tx();
+    wlpdstm_wait_grace_period(NULL);
+    wlpdstm_write_word(NULL, 0);
+    wlpdstm_write_word_mb(NULL, 0);
+    wlpdstm_read_word(NULL);
+    wlpdstm_rp_free(NULL, NULL);
+}
+
+*/
 

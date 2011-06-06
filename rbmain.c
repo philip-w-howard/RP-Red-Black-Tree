@@ -45,6 +45,10 @@
 #define GOFLAG_RUN  1
 #define GOFLAG_STOP 2
 
+#ifdef RP_UPDATE
+int Update(unsigned long *random_seed, param_t *params);
+#endif
+
 volatile int goflag = GOFLAG_INIT;
 
 param_t Params = {64, 10000, 1, MODE_READ, NUM_CPUS, 0, 0, 0, 0, 0, 0, 0};
@@ -133,6 +137,9 @@ void set_affinity(int cpu_number)
 void *thread_func(void *arg)
 {
     thread_data_t *thread_data = (thread_data_t *)arg;
+#ifdef RP_UPDATE
+    int update_percent = thread_data->update_percent;
+#endif
     int insert_percent = thread_data->insert_percent;
     int delete_percent = thread_data->delete_percent;
     int thread_index = thread_data->thread_index;
@@ -144,6 +151,8 @@ void *thread_func(void *arg)
     unsigned long long n_read_fails = 0;
     unsigned long long n_writes = 0;
     unsigned long long n_write_fails = 0;
+    unsigned long long *stats;
+    unsigned long long *stat_buff;
 
     set_affinity(thread_index);
     lock_thread_init(thread_data->lock, thread_index);
@@ -182,6 +191,15 @@ void *thread_func(void *arg)
             while (goflag == GOFLAG_RUN) 
             {
                 int_value = get_random(&random_seed) % UPDATE_MAX;
+#ifdef RP_UPDATE
+                if (int_value < update_percent)
+                {
+                    if (Update(&random_seed, &Params))
+                        n_writes++;
+                    else
+                        n_write_fails++;
+                }
+#else
                 if (int_value < delete_percent)
                 {
                     if (Delete(&random_seed, &Params))
@@ -196,6 +214,7 @@ void *thread_func(void *arg)
                     else
                         n_write_fails++;
                 }
+#endif
                 else 
                 {
                     if (RRead(&random_seed, &Params))
@@ -211,7 +230,12 @@ void *thread_func(void *arg)
 
     thread_data->done = 1;
 
-    return get_thread_stats(n_reads, n_read_fails, n_writes, n_write_fails, 0, 0); 
+    // copy the thread stats from thread local go global memory
+    stats = get_thread_stats(n_reads, n_read_fails, n_writes, n_write_fails, 0, 0);
+    stat_buff = (unsigned long long *)malloc((stats[0]+1)*sizeof(unsigned long long));
+    memcpy(stat_buff, stats, (stats[0]+1)*sizeof(unsigned long long));
+
+    return stat_buff;
 }
 
 /*
@@ -270,11 +294,11 @@ void parse_args(int argc, char *argv[])
                 else if (strcmp(value, "TEST") == 0)
                 {
                     Params.mode = MODE_RANDOM;
-                    Params.update_percent = 1000000;
+                    Params.update_percent = 0;
                     Params.delete_percent = Params.update_percent/2;
                     Params.insert_percent = Params.update_percent/2;
-                    Params.size = 64;
-                    Params.scale = 128;
+                    Params.size = 65536;
+                    Params.scale = Params.size*2;
                 }
                 else
                     usage(argc, argv, argv[ii]);
@@ -355,7 +379,7 @@ int main(int argc, char *argv[])
     lock_thread_init(lock, 0);
     my_data = Init_Data(Params.size, lock, &Params);
 
-    printf("pre tree size: %d\n", Size(my_data));
+    //if (Params.stm_stats) rb_output(my_data);
 
     for (ii=0; ii<MAX_THREADS; ii++)
     {
@@ -399,6 +423,7 @@ int main(int argc, char *argv[])
 
 	sleep(1);
     printf("init done\n");
+    printf("pre tree size: %d\n", Size(my_data));
 	sleep(1);
 	goflag = GOFLAG_RUN;
 	lock_mb();

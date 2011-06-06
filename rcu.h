@@ -39,7 +39,7 @@ void rp_free(void *lock, void (*func)(void *ptr), void *ptr);
 /* Assume DEC Alpha is dead.  Long live DEC Alpha. */
 #define rp_dereference(p) (*(volatile typeof(p) *)&(p))
 #define rp_assign_pointer(p, v) ({ lock_mb(); (p) = (v); })
-void rp_synchronize(void *lock);
+void rp_wait_grace_period(void *lock);
 void rp_free(void *lock, void (*func)(void *ptr), void *ptr);
 int rp_poll(void *lock);
 

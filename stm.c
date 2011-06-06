@@ -84,8 +84,8 @@ typedef struct
         epoch_list_t *epoch_list;
     volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         AO_t rp_epoch;
-//    volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
-//        block_list_t block;
+    volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
+        block_list_t block;
     __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         AO_t write_requests;
     __attribute__((__aligned__(CACHE_LINE_SIZE))) 
@@ -104,7 +104,7 @@ static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
 
 #endif
 
-static __thread int Stm_Write = 0;
+//static __thread int Stm_Write = 0;
 //**********************************************
 void stm_stats(int index)
 {
@@ -482,6 +482,7 @@ void rp_free(void *lock, void (*func)(void *ptr), void *ptr)
     //rp_lock_t *rp_lock = (rp_lock_t *)lock;
     int head;
 
+    //printf("rp free of key %ld: %p\n", ((rbnode_t *)ptr)->key, ptr);
     func = rbnode_free;
 
     assert(ptr != NULL);

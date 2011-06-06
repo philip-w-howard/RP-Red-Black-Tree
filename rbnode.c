@@ -70,6 +70,8 @@ static void *rb_alloc()
     {
 #ifdef STM
         ptr = (extended_node_t *)wlpdstm_tx_malloc(sizeof(extended_node_t));
+//#warning "NOT USING WLPDSTM_TX_MALLOC"
+        //ptr = (extended_node_t *)malloc(sizeof(extended_node_t));
 #else
         ptr = (extended_node_t *)malloc(sizeof(extended_node_t));
 #endif
@@ -126,6 +128,7 @@ void rbnode_free(void *ptr)
         if (eptr->node.lock != NULL) free(eptr->node.lock);
 #endif
 #ifdef RP_STM
+        //printf("actual free of node key %ld: %p\n", eptr->node.key, &(eptr->node));
         wlpdstm_free(eptr);
 #elif defined(STM)
         wlpdstm_tx_free(eptr, sizeof(extended_node_t));
@@ -142,20 +145,36 @@ void rbnode_free(void *ptr)
 rbnode_t *rbnode_create(long key, void *value)
 {
 	rbnode_t *node = (rbnode_t *)rb_alloc();
+#ifdef STM
+	STORE(node->key, key);
+	STORE(node->value, value);
+	STORE(node->color, BLACK);
+	STORE(node->right, NULL);
+	STORE(node->left, NULL);
+    STORE(node->parent, NULL);
+#else
 	node->key = key;
 	node->value = value;
 	node->color = BLACK;
 	node->right = NULL;
 	node->left = NULL;
     node->parent = NULL;
+#endif
+
+    // not multithread or TX safe, but index isn't important anyway
 	node->index = Index++;
 
 #ifdef FG_LOCK
     if (node->lock == NULL) node->lock = lock_init();
 #endif
 
+#ifdef STM
+    STORE(node->height, 1);
+    STORE(node->changeOVL, 0);
+#else
     node->height = 1;
     node->changeOVL = 0;
+#endif
 
 	return node;
 }
@@ -169,8 +188,6 @@ rbnode_t *rbnode_copy(rbnode_t *node)
     STORE(newnode->left, LOAD(node->left));
     STORE(newnode->right, LOAD(node->right));
     STORE(newnode->parent, LOAD(node->parent));
-    // NOTE: not multi-writer safe. we'll ignore that. Index isn't that important
-	newnode->index = Index++;
     STORE(newnode->color, LOAD(node->color));
 
     // the following aren't used except for FG and AVL: lock, height, changeOVL
@@ -183,8 +200,13 @@ rbnode_t *rbnode_copy(rbnode_t *node)
     // NOTE: not multi-writer safe, but we'll ignore that. Index isn't that important
 	newnode->index = Index++;
 
-	if (node->left  != NULL) node->left->parent  = newnode;
+#ifdef STM
+	if (LOAD(node->left)  != NULL) STORE(LOAD(node->left)->parent, newnode);
+	if (LOAD(node->right) != NULL) STORE(LOAD(node->right)->parent, newnode);
+#else
+	if (node->left  != NULL) node->left->parent = newnode;
 	if (node->right != NULL) node->right->parent = newnode;
+#endif
 
 #ifdef FG_LOCK
     newnode->lock = lock_init();

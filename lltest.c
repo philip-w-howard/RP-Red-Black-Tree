@@ -49,7 +49,6 @@ int ll_pre_insert(ll_t *list, unsigned long key, void *value)
     new_node->next = node->next;
     new_node->key = key;
     new_node->value = value;
-    new_node->next = NULL;
     node->next = new_node;
     list->size++;
 
