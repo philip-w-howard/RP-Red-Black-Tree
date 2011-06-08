@@ -38,11 +38,8 @@ static int is_left(rbnode_t *node)
 //*******************************
 void rb_create(rbtree_t *tree, void *lock)
 {
-#ifdef MULTIWRITERS
-    read_lock(lock);
-#else
     write_lock(lock);
-#endif
+
     tree->root = NULL;
     tree->restructure_copies = 0;
     tree->restructure_multi_copies = 0;
@@ -50,11 +47,8 @@ void rb_create(rbtree_t *tree, void *lock)
     tree->restructures = 0;
     tree->grace_periods = 0;
     tree->lock = lock;
-#ifdef MULTIWRITERS
-    read_unlock(lock);
-#else
+
     write_unlock(lock);
-#endif
 }
 //*******************************
 static rbnode_t *find_node(rbtree_t *tree, long key)
@@ -97,349 +91,241 @@ static rbnode_t *sibling(rbnode_t *node)
         return node->parent->left;
 }
 //*******************************
-static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
+static void diag_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
                         rbnode_t **a, rbnode_t **b, rbnode_t **c)
 {
-#ifdef OLD_RCU
-    rbnode_t *greatgrandparent = grandparent->parent;
-    int left = 0;
-    if (grandparent->parent != NULL) left = is_left(grandparent);
-    //printf("restructure %s\n", toString(node));
-
-    tree->restructures++;
-
-    if (grandparent->left == parent && parent->left == node)
-    {
-        // diag left
-		rbnode_t *cprime;
-		cprime = rbnode_copy(grandparent);
-		tree->restructure_copies++;
-        //check_for(tree->root, cprime);
-
-
-        rp_assign_pointer(cprime->left, parent->right);
-        if (parent->right != NULL) parent->right->parent = cprime;
-        
-        rp_assign_pointer(parent->right, cprime);
-        cprime->parent = parent;
-
-		if (greatgrandparent != NULL)
-		{
-			if (left) 
-				rp_assign_pointer(greatgrandparent->left, parent);
-			else
-				rp_assign_pointer(greatgrandparent->right, parent);
-
-			parent->parent = greatgrandparent;
-		} else {
-			parent->parent = NULL;
-			rp_assign_pointer(tree->root, parent);
-		}
-
-        *a = node;
-        *b = parent;
-        *c = cprime;
-		
-        rp_free(tree->lock, rbnode_free, grandparent);
-    } 
-    else if (grandparent->left == parent && parent->right == node)
-    {
-        // zig left
-		rbnode_t *bprime = rbnode_copy(node);
-		tree->restructure_copies++;
-        //check_for(tree->root, bprime);
-		
-		rp_assign_pointer(bprime->left, parent);
-		parent->parent = bprime;
-
-		rp_assign_pointer(bprime->right, grandparent);
-		grandparent->parent = bprime;
-
- 		if (greatgrandparent != NULL)
-		{
-			if (left) 
-				rp_assign_pointer(greatgrandparent->left, bprime);
-			else
-				rp_assign_pointer(greatgrandparent->right, bprime);
-
-			bprime->parent = greatgrandparent;
-		} else {
-			bprime->parent = NULL;
-			rp_assign_pointer(tree->root, bprime);
-		}
-        
-        // Make sure all readers have seen bprime before hiding path to B
-        rp_wait_grace_period(tree->lock);
-        tree->grace_periods++;
-
-        rp_assign_pointer(grandparent->left, node->right);
-        if (node->right != NULL) node->right->parent = grandparent;
-
-        rp_assign_pointer(parent->right, node->left);
-        if (node->left != NULL) node->left->parent = parent;
-
-		*a = parent;
-        *b = bprime;
-        *c = grandparent;
-        rp_free(tree->lock, rbnode_free, node);
-	}
-    else if (parent->right == node && grandparent->right == parent)
-    {
-        // diag right
-		rbnode_t *aprime = rbnode_copy(grandparent);
-		tree->restructure_copies++;
-        //check_for(tree->root, aprime);
-
-        rp_assign_pointer(aprime->right, parent->left);
-        if (parent->left != NULL) parent->left->parent = aprime;
-
-        rp_assign_pointer(parent->left, aprime);
-        aprime->parent = parent;
-
-		if (greatgrandparent != NULL)
-		{
-			if (left) 
-				rp_assign_pointer(greatgrandparent->left, parent);
-			else
-				rp_assign_pointer(greatgrandparent->right, parent);
-
-			parent->parent = greatgrandparent;
-		} else {
-			parent->parent = NULL;
-			rp_assign_pointer(tree->root, parent);
-		}
-
-        *a = aprime;
-        *b = parent;
-        *c = node;
-        rp_free(tree->lock, rbnode_free, grandparent);
-    }
-    else
-    {
-        // zig right
-		rbnode_t *bprime = rbnode_copy(node);
-		tree->restructure_copies++;
-        //check_for(tree->root, bprime);
-
-        rp_assign_pointer(bprime->left, grandparent);
-        grandparent->parent = bprime;
-
-        rp_assign_pointer(bprime->right, parent);
-        parent->parent = bprime;
-
-		if (greatgrandparent != NULL)
-		{
-			if (left) 
-				rp_assign_pointer(greatgrandparent->left, bprime);
-			else
-				rp_assign_pointer(greatgrandparent->right, bprime);
-
-			bprime->parent = greatgrandparent;
-		} else {
-			bprime->parent = NULL;
-			rp_assign_pointer(tree->root, bprime);
-		}
-
-        // Make sure all readers have seen bprime before hiding path to B
-        rp_wait_grace_period(tree->lock);
-        tree->grace_periods++;
-
-        rp_assign_pointer(grandparent->right, node->left);
-        if (node->left != NULL) node->left->parent = grandparent;
-
-        rp_assign_pointer(parent->left, node->right);
-        if (node->right != NULL) node->right->parent = parent;
-
-        *a = grandparent;
-        *b = bprime;
-        *c = parent;
-        rp_free(tree->lock, rbnode_free, node);
-   }
-#else
     rbnode_t *aprime, *bprime, *cprime;
     rbnode_t *greatgrandparent = grandparent->parent;
     int left = 0;
 
-    //NOSTATS tree->restructures++;
-
     if (grandparent->parent != NULL) left = is_left(grandparent);
-    //printf("restructure %s\n", toString(node));
 
-    if (grandparent->left == parent && parent->left == node)
-    {
-        // diag left
+    // diag left
 #if defined(NO_GRACE_PERIOD) || defined(RCU)
-        cprime = rbnode_copy(grandparent);
-        //NOSTATS tree->restructure_copies++;
-        bprime = parent;
-        aprime = node;
+    cprime = rbnode_copy(grandparent);
+    //NOSTATS tree->restructure_copies++;
+    bprime = parent;
+    aprime = node;
 #else
-        aprime = node;
-        bprime = parent;
-        cprime = grandparent;
+    aprime = node;
+    bprime = parent;
+    cprime = grandparent;
 #endif
 
-        cprime->left = bprime->right;
-        if (bprime->right != NULL) bprime->right->parent = cprime;
+    cprime->left = bprime->right;
+    if (bprime->right != NULL) bprime->right->parent = cprime;
         
-        rp_assign_pointer(bprime->right, cprime);
-        cprime->parent = bprime;
+    rp_assign_pointer(bprime->right, cprime);
+    cprime->parent = bprime;
 
-        if (greatgrandparent != NULL)
-        {
-            if (left) {
-                rp_assign_pointer(greatgrandparent->left, bprime);
-            } else {
-                rp_assign_pointer(greatgrandparent->right, bprime);
-            }
-
-            bprime->parent = greatgrandparent;
-        } else {
-            bprime->parent = NULL;
-            rp_assign_pointer(tree->root, bprime);
-        }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
-        rp_free(tree->lock, rbnode_free, grandparent);
-#endif
-    } 
-    else if (grandparent->left == parent && parent->right == node)
+    if (greatgrandparent != NULL)
     {
-        // zig left
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
-        cprime = rbnode_copy(grandparent);
-        aprime = rbnode_copy(parent);
-        bprime = node;
-        //NOSTATS tree->restructure_multi_copies++;
-
-        cprime->left = aprime;
-        aprime->parent = cprime;
-        aprime->right = bprime;
-        bprime->parent = aprime;
-#else
-        aprime = parent;
-        bprime = node;
-        cprime = grandparent;
-#endif
-        aprime->right = bprime->left;
-        if (bprime->left != NULL) bprime->left->parent = aprime;
-
-        cprime->left = bprime->right;
-        if (bprime->right != NULL) bprime->right->parent = cprime;
-
-        rp_assign_pointer(bprime->left, aprime);
-        aprime->parent = bprime;
-
-        bprime->right = cprime;
-        cprime->parent = bprime;
-
-        if (greatgrandparent != NULL)
-        {
-            if (left) {
-                rp_assign_pointer(greatgrandparent->left, bprime);
-            } else {
-                rp_assign_pointer(greatgrandparent->right, bprime);
-            }
-
-            bprime->parent = greatgrandparent;
+        if (left) {
+            rp_assign_pointer(greatgrandparent->left, bprime);
         } else {
-            bprime->parent = NULL;
-            rp_assign_pointer(tree->root, bprime);
+            rp_assign_pointer(greatgrandparent->right, bprime);
         }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
-        rp_free(tree->lock, rbnode_free, parent);
-        rp_free(tree->lock, rbnode_free, grandparent);
-#endif
+
+        bprime->parent = greatgrandparent;
+    } else {
+        bprime->parent = NULL;
+        rp_assign_pointer(tree->root, bprime);
     }
-    else if (parent->right == node && grandparent->right == parent)
-    {
-        // diag right
 #if defined(NO_GRACE_PERIOD) || defined(RCU)
-        aprime = rbnode_copy(grandparent);
-        //NOSTATS tree->restructure_copies++;
-        bprime = parent;
-        cprime = node;
-#else
-        aprime = grandparent;
-        bprime = parent;
-        cprime = node;
+    rp_free(tree->lock, rbnode_free, grandparent);
 #endif
-        aprime->right = bprime->left;
-        if (bprime->left != NULL) bprime->left->parent = aprime;
-
-        rp_assign_pointer(bprime->left, aprime);
-        aprime->parent = bprime;
-
-        if (greatgrandparent != NULL)
-        {
-            if (left) {
-                rp_assign_pointer(greatgrandparent->left, bprime);
-            } else {
-                rp_assign_pointer(greatgrandparent->right, bprime);
-            }
-
-            bprime->parent = greatgrandparent;
-        } else {
-            bprime->parent = NULL;
-            rp_assign_pointer(tree->root, bprime);
-        }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
-        rp_free(tree->lock, rbnode_free, grandparent);
-#endif
-    }
-    else
-    {
-        // zig right
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
-        aprime = rbnode_copy(grandparent);
-        cprime = rbnode_copy(parent);
-        bprime = node;
-        //NOSTATS tree->restructure_multi_copies++;
-
-        aprime->right = cprime;
-        cprime->parent = aprime;
-        cprime->left = bprime;
-        bprime->parent = cprime;
-#else
-        aprime = grandparent;
-        bprime = node;
-        cprime = parent;
-#endif
-        aprime->right = bprime->left;
-        if (bprime->left != NULL) bprime->left->parent = aprime;
-
-        cprime->left = bprime->right;
-        if (bprime->right != NULL) bprime->right->parent = cprime;
-
-        rp_assign_pointer(bprime->left, aprime);
-        aprime->parent = bprime;
-
-        bprime->right = cprime;
-        cprime->parent = bprime;
-
-        if (greatgrandparent != NULL)
-        {
-            if (left) {
-                rp_assign_pointer(greatgrandparent->left, bprime);
-            } else {
-                rp_assign_pointer(greatgrandparent->right, bprime);
-            }
-
-            bprime->parent = greatgrandparent;
-        } else {
-            bprime->parent = NULL;
-            rp_assign_pointer(tree->root, bprime);
-        }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
-        rp_free(tree->lock, rbnode_free, parent);
-        rp_free(tree->lock, rbnode_free, grandparent);
-#endif
-    }
 
     *a = aprime;
     *b = bprime;
     *c = cprime;
+}
+//*******************************
+static void zig_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
+                        rbnode_t **a, rbnode_t **b, rbnode_t **c)
+{
+    rbnode_t *aprime, *bprime, *cprime;
+    rbnode_t *greatgrandparent = grandparent->parent;
+    int left = 0;
 
+    if (grandparent->parent != NULL) left = is_left(grandparent);
+
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+    cprime = rbnode_copy(grandparent);
+    aprime = rbnode_copy(parent);
+    bprime = node;
+    //NOSTATS tree->restructure_multi_copies++;
+
+    cprime->left = aprime;
+    aprime->parent = cprime;
+    aprime->right = bprime;
+    bprime->parent = aprime;
+#else
+    aprime = parent;
+    bprime = node;
+    cprime = grandparent;
 #endif
+    aprime->right = bprime->left;
+    if (bprime->left != NULL) bprime->left->parent = aprime;
+
+    cprime->left = bprime->right;
+    if (bprime->right != NULL) bprime->right->parent = cprime;
+
+    rp_assign_pointer(bprime->left, aprime);
+    aprime->parent = bprime;
+
+    bprime->right = cprime;
+    cprime->parent = bprime;
+
+    if (greatgrandparent != NULL)
+    {
+        if (left) {
+            rp_assign_pointer(greatgrandparent->left, bprime);
+        } else {
+            rp_assign_pointer(greatgrandparent->right, bprime);
+        }
+
+        bprime->parent = greatgrandparent;
+    } else {
+        bprime->parent = NULL;
+        rp_assign_pointer(tree->root, bprime);
+    }
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+    rp_free(tree->lock, rbnode_free, parent);
+    rp_free(tree->lock, rbnode_free, grandparent);
+#endif
+
+    *a = aprime;
+    *b = bprime;
+    *c = cprime;
+}
+//*******************************
+static void diag_right(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
+                        rbnode_t **a, rbnode_t **b, rbnode_t **c)
+{
+    rbnode_t *aprime, *bprime, *cprime;
+    rbnode_t *greatgrandparent = grandparent->parent;
+    int left = 0;
+
+    if (grandparent->parent != NULL) left = is_left(grandparent);
+
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+    aprime = rbnode_copy(grandparent);
+    //NOSTATS tree->restructure_copies++;
+    bprime = parent;
+    cprime = node;
+#else
+    aprime = grandparent;
+    bprime = parent;
+    cprime = node;
+#endif
+    aprime->right = bprime->left;
+    if (bprime->left != NULL) bprime->left->parent = aprime;
+
+    rp_assign_pointer(bprime->left, aprime);
+    aprime->parent = bprime;
+
+    if (greatgrandparent != NULL)
+    {
+        if (left) {
+            rp_assign_pointer(greatgrandparent->left, bprime);
+        } else {
+            rp_assign_pointer(greatgrandparent->right, bprime);
+        }
+
+        bprime->parent = greatgrandparent;
+    } else {
+        bprime->parent = NULL;
+        rp_assign_pointer(tree->root, bprime);
+    }
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+    rp_free(tree->lock, rbnode_free, grandparent);
+#endif
+
+    *a = aprime;
+    *b = bprime;
+    *c = cprime;
+}
+//*******************************
+static void zig_right(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
+                        rbnode_t **a, rbnode_t **b, rbnode_t **c)
+{
+    rbnode_t *aprime, *bprime, *cprime;
+    rbnode_t *greatgrandparent = grandparent->parent;
+    int left = 0;
+
+    if (grandparent->parent != NULL) left = is_left(grandparent);
+
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+    aprime = rbnode_copy(grandparent);
+    cprime = rbnode_copy(parent);
+    bprime = node;
+    //NOSTATS tree->restructure_multi_copies++;
+
+    aprime->right = cprime;
+    cprime->parent = aprime;
+    cprime->left = bprime;
+    bprime->parent = cprime;
+#else
+    aprime = grandparent;
+    bprime = node;
+    cprime = parent;
+#endif
+    aprime->right = bprime->left;
+    if (bprime->left != NULL) bprime->left->parent = aprime;
+
+    cprime->left = bprime->right;
+    if (bprime->right != NULL) bprime->right->parent = cprime;
+
+    rp_assign_pointer(bprime->left, aprime);
+    aprime->parent = bprime;
+
+    bprime->right = cprime;
+    cprime->parent = bprime;
+
+    if (greatgrandparent != NULL)
+    {
+        if (left) {
+            rp_assign_pointer(greatgrandparent->left, bprime);
+        } else {
+            rp_assign_pointer(greatgrandparent->right, bprime);
+        }
+
+        bprime->parent = greatgrandparent;
+    } else {
+        bprime->parent = NULL;
+        rp_assign_pointer(tree->root, bprime);
+    }
+#if defined(NO_GRACE_PERIOD) || defined(RCU)
+    rp_free(tree->lock, rbnode_free, parent);
+    rp_free(tree->lock, rbnode_free, grandparent);
+#endif
+
+    *a = aprime;
+    *b = bprime;
+    *c = cprime;
+}
+//*******************************
+static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
+                        rbnode_t **a, rbnode_t **b, rbnode_t **c)
+{
+    //NOSTATS tree->restructures++;
+
+    if (grandparent->left == parent && parent->left == node)
+    {
+        diag_left(tree, grandparent, parent, node, a, b, c);
+    } 
+    else if (grandparent->left == parent && parent->right == node)
+    {
+        zig_left(tree, grandparent, parent, node, a, b, c);
+    }
+    else if (parent->right == node && grandparent->right == parent)
+    {
+        diag_right(tree, grandparent, parent, node, a, b, c);
+    }
+    else
+    {
+        zig_right(tree, grandparent, parent, node, a, b, c);
+    }
 }
 //*******************************
 static void recolor(rbtree_t *tree, rbnode_t *node)
@@ -477,11 +363,7 @@ int rb_insert(rbtree_t *tree, long key, void *value)
     rbnode_t *new_node;
 
     //printf("rb_insert write_lock\n");
-#ifdef MULTIWRITERS
-    read_lock(tree->lock);
-#else
     write_lock(tree->lock);
-#endif
 
     //check_for(tree->root, new_node);
 
@@ -500,11 +382,7 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 			prev = node;
             if (key == node->key)
             {
-#ifdef MULTIWRITERS
-                read_unlock(tree->lock);
-#else
                 write_unlock(tree->lock);
-#endif
                 return 0;
             }
             else if (key <= node->key) 
@@ -527,11 +405,7 @@ int rb_insert(rbtree_t *tree, long key, void *value)
 	}
 
     //printf("rb_insert write_unlock\n");
-#ifdef MULTIWRITERS
-    read_unlock(tree->lock);
-#else
     write_unlock(tree->lock);
-#endif
 
     return 1;
 }
@@ -649,11 +523,7 @@ void *rb_remove(rbtree_t *tree, long key)
 	void *value = NULL;
     int temp_color;
 
-#ifdef MULTIWRITERS
-    read_lock(tree->lock);
-#else
     write_lock(tree->lock);
-#endif
 
 	node = find_node(tree, key);
 
@@ -661,11 +531,7 @@ void *rb_remove(rbtree_t *tree, long key)
 	if (node == NULL) 
     {
         //printf("rb_remove not found write_unlock\n");
-#ifdef MULTIWRITERS
-        read_unlock(tree->lock);
-#else
         write_unlock(tree->lock);
-#endif
         return NULL;
     }
 
@@ -818,11 +684,7 @@ void *rb_remove(rbtree_t *tree, long key)
     rp_free(tree->lock, rbnode_free, node);
 
     //printf("rb_remove write_unlock\n");
-#ifdef MULTIWRITERS
-    read_unlock(tree->lock);
-#else
     write_unlock(tree->lock);
-#endif
 	return value;
 }
 //***************************************

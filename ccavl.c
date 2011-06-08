@@ -35,14 +35,14 @@
 
 //***********************************************
 // the following is a hack to allow a deeply nested routine to see the
-// root of the tree. This is necessary so rcu_free can be passed the tree lock
+// root of the tree. This is necessary so rp_free can be passed the tree lock
 // rather than the node lock.
 //***********************************************
 #ifdef __sparc__
-static rbtree_t *My_Tree;
+//static rbtree_t *My_Tree;
 #warning "NEED __thread TO MAKE THIS WORK"
 #else
-static __thread rbtree_t *My_Tree;
+//static __thread rbtree_t *My_Tree;
 #endif
 
     /** This is a special value that indicates the presence of a null value,
@@ -767,12 +767,13 @@ int attemptUnlink_nl(rbnode_t *parent, rbnode_t *node) {
         lock_mb();
         //printf("unlink %p %p %p\n", parent, node, splice);
         // NOTE: this is a hack to allow deeply nested routines to be able to
-        //       see the root of the tree. This is necessary to allow rcu_free
+        //       see the root of the tree. This is necessary to allow rp_free
         //       to be passed the tree lock rather than the node lock.
         //       My_Tree is a thread local variable that is set by the
         //       public interface on each method call
         //
-        rcu_free(My_Tree->lock, rbnode_free, node);
+        //rp_free(My_Tree->lock, rbnode_free, node);
+        // FIX THIS: not doing garbage collection
 
         return 1;
     }
@@ -1351,16 +1352,16 @@ void *rb_find(rbtree_t *tree, long key)
     void *value;
 
     // NOTE: this is a hack to allow deeply nested routines to be able to
-    //       see the root of the tree. This is necessary to allow rcu_free
+    //       see the root of the tree. This is necessary to allow rp_free
     //       to be passed the tree lock rather than the node lock.
-    My_Tree = tree;
+    //My_Tree = tree;
 
     // NOTE: read_lock/read_unlock are to mark the readside critical section
     //       for memory reclaimation purposes. These are the RCU calls,
     //       so they are non-blocking
-    read_lock(tree->lock);
+    //read_lock(tree->lock);
     value = get(tree->root, key);
-    read_unlock(tree->lock);
+    //read_unlock(tree->lock);
 
     return value;
 }
@@ -1370,16 +1371,16 @@ int rb_insert(rbtree_t *tree, long key, void *value)
     void *old_value;
     
     // NOTE: this is a hack to allow deeply nested routines to be able to
-    //       see the root of the tree. This is necessary to allow rcu_free
+    //       see the root of the tree. This is necessary to allow rp_free
     //       to be passed the tree lock rather than the node lock.
-    My_Tree = tree;
+    //My_Tree = tree;
 
     // NOTE: read_lock/read_unlock are to mark the readside critical section
     //       for memory reclaimation purposes. These are the RCU calls,
     //       so they are non-blocking
-    read_lock(tree->lock);
+    //read_lock(tree->lock);
     old_value = put(tree->root, key, value);
-    read_unlock(tree->lock);
+    //read_unlock(tree->lock);
 
     if (old_value != NULL) return 0;
 
@@ -1392,16 +1393,16 @@ void *rb_remove(rbtree_t *tree, long key)
     void *value;
     
     // NOTE: this is a hack to allow deeply nested routines to be able to
-    //       see the root of the tree. This is necessary to allow rcu_free
+    //       see the root of the tree. This is necessary to allow rp_free
     //       to be passed the tree lock rather than the node lock.
-    My_Tree = tree;
+    //My_Tree = tree;
 
     // NOTE: read_lock/read_unlock are to mark the readside critical section
     //       for memory reclaimation purposes. These are the RCU calls,
     //       so they are non-blocking
-    read_lock(tree->lock);
+    //read_lock(tree->lock);
     value = remove_node(tree->root, key);
-    read_unlock(tree->lock);
+    //read_unlock(tree->lock);
 
     //if (value != NULL) printf("remove %ld\n", key);
     return value;

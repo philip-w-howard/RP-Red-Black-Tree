@@ -28,10 +28,15 @@
 #include "atomic_ops.h"
 #include "lock.h"
 #include "rbnode.h"
+#include "rcu.h"
 
 char *implementation_name()
 {
+#ifdef LINEARIZABLE
+    return "LRP";
+#else
     return "RP";
+#endif
 }
 
 #define NSTATS      16
@@ -151,6 +156,10 @@ void write_unlock(void *lock)
 {
     rp_lock_t *rp_lock = (rp_lock_t *)lock;
 
+#ifdef LINEARIZABLE
+    rp_wait_grace_period(lock);
+#endif
+
     pthread_mutex_unlock(&rp_lock->rp_writer_lock);
 }
 
@@ -253,6 +262,10 @@ void write_unlock(void *vlock)
     rp_lock_t *lock = (rp_lock_t *)vlock;
 
    //assert((AO_load(&lock->reader_count_and_flag) & RWL_ACTIVE_WRITER_FLAG) != 0);
+#ifdef LINEARIZABLE
+    rp_wait_grace_period(lock);
+#endif
+
     AO_fetch_and_add_full(&lock->reader_count_and_flag, -1);
     AO_fetch_and_add_full(&lock->write_completions, 1);
 }
@@ -430,7 +443,6 @@ void rp_free(void *lock, void (*func)(void *ptr), void *ptr)
 #ifdef MULTIWRITERS
     write_unlock(lock);
 #endif
-
 }
 //*****************************************************
 int rp_poll(void *lock)

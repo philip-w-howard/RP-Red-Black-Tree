@@ -14,7 +14,7 @@ URCUFLAGS = -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE
 FGFLAGS = -DFG_LOCK
 RCUFLAGS = -DRCU
 MULTIFLAGS = -DMULTIWRITERS
-AVLFLAGS = $(RCUFLAGS) $(MULTIFLAGS) -DRCU_USE_MUTEX $(FGFLAGS)
+AVLFLAGS = $(MULTIFLAGS) $(FGFLAGS)
 STMFLAGS = -DSTM -I/u/pwh/swissTM/swissTM_word/include # -DRPSTM_STATS # -DRP_FINDS -DRP_UPDATE
 RPSTMFLAGS = -DRP_STM
 CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) -O0 # -pg 
@@ -26,7 +26,7 @@ STM_LFLAGS = -L/u/pwh/swissTM/swissTM_word/lib
 
 CC = gcc
 
-TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lock rb_nolock ll_rwlr rb_stm rb_rpstm rb_rpstm_rp parse # stmbad # ngp rbl_rcu ccavl rpavl rwlravl rwlwavl lockavl nolockavl fgl rcumulti rcutest rb_fg # rb_urcu urcutest 
+TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lrcu rb_lock rb_nolock rb_stm rb_rpstm rb_rpstm_rp parse ngp ccavl rpavl # stmbad # ccavl rpavl rwlravl rwlwavl lockavl nolockavl rcutest ll_rwlr # rb_urcu urcutest 
 all: $(TARGETS)
 
 stuff: aotest
@@ -138,25 +138,11 @@ rwlwavl: rbmain.c rpavl.c avl.h rwl_write.o rbtest.c
 	$(CC) -c rpavl.c $(CFLAGS)
 	$(CC) -o rwlwavl $(LFLAGS) rbmain.c rbtest.o rbnode.o rpavl.o rwl_write.o
 
-ccavl: rbmain.c ccavl.c avl.h rcu.c rbtest.c
+ccavl: rbmain.c ccavl.c avl.h rbtest.c rwl_write.o
 	$(CC) -c rbtest.c $(CFLAGS) $(AVLFLAGS)
 	$(CC) -c rbnode.c $(CFLAGS) $(AVLFLAGS)
-	$(CC) -c rcu.c $(CFLAGS) $(AVLFLAGS)
 	$(CC) -c ccavl.c $(CFLAGS) $(AVLFLAGS)
-	$(CC) -o ccavl $(LFLAGS) rbmain.c rbtest.o rbnode.o ccavl.o rcu.o $(AVLFLAGS)
-
-fgl: rbmain.c rbnode.c rblfgtree.c rcu.c rbtest.c
-	$(CC) -c rbtest.c $(CFLAGS) $(FGFLAGS)
-	$(CC) -c rbnode.c $(CFLAGS) $(FGFLAGS)
-	$(CC) -c rblfgtree.c $(CFLAGS) $(FGFLAGS)
-	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) $(FGFLAGS)
-	$(CC) -o fgl $(LFLAGS) $(FGFLAGS) rbmain.c rbtest.o rblfgtree.o rbnode.o rcu.o 
-
-rb_fg: rbmain.c rbnode_fg.c rbtree_fg.c rwl_write.o rbtest.c
-	$(CC) -c rbtest.c $(CFLAGS)
-	$(CC) -c rbnode_fg.c $(CFLAGS) 
-	$(CC) -c rbtree_fg.c $(CFLAGS) 
-	$(CC) -o rb_fg $(LFLAGS) rbmain.c rbtest.o rbnode_fg.o rbtree_fg.o rwl_write.o 
+	$(CC) -o ccavl $(LFLAGS) rbmain.c rbtest.o rbnode.o ccavl.o rwl_write.o $(AVLFLAGS)
 
 rb_rwl_write: rbmain.c rbnode.c rbtree.c rwl_write.o rbtest.c
 	$(CC) -c rbtest.c $(CFLAGS)
@@ -178,23 +164,11 @@ ll_rwlr: rbmain.c lltest.o rwl_read.o
 	$(CC) -c rbtest.c $(CFLAGS)
 	$(CC) -o ll_rwlr $(LFLAGS) rbmain.c rwl_read.o lltest.o
 
-rbl_rcu: rbmain.c rbnode.c rbltree.c rcu.c rbtest.c
-	$(CC) -c rbnode.c $(CFLAGS) $(MULTIFLAGS)
-	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) $(MULTIFLAGS)
-	$(CC) -c rbltree.c $(CFLAGS) $(RCUFLAGS) $(MULTIFLAGS)
-	$(CC) -o rbl_rcu $(LFLAGS) rbmain.c rbtest.o $(RCUFLAGS) rbnode.o rbltree.o rcu.o $(MULTIFLAGS)
-
 ngp: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
 	$(CC) -c rbnode.c $(CFLAGS) 
 	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) 
 	$(CC) -c rbtree.c $(CFLAGS) -DNO_GRACE_PERIOD
 	$(CC) -o ngp $(LFLAGS) rbmain.c rbtest.o $(RCUFLAGS) rbnode.o rbtree.o rcu.o
-
-rcumulti: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
-	$(CC) -c rbnode.c $(CFLAGS) $(RCUFLAGS) $(MULTIFLAGS)
-	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) $(MULTIFLAGS)
-	$(CC) -c rbtree.c $(CFLAGS) $(RCUFLAGS) $(MULTIFLAGS)
-	$(CC) -o rcumulti $(LFLAGS) rbmain.c $(RCUFLAGS) $(MULTIFLAGS) $(objects) rcu.o
 
 rb_rcu: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
 	$(CC) -c rbnode.c $(CFLAGS) $(RCUFLAGS)
@@ -202,6 +176,14 @@ rb_rcu: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
 	$(CC) -c rbtree.c $(CFLAGS) $(RCUFLAGS)
 	$(CC) -c rbtest.c $(CFLAGS) $(RCUFLAGS)
 	$(CC) -o rb_rcu $(LFLAGS) rbmain.c $(RCUFLAGS) rbnode.o rbtree.o rbtest.o rcu.o
+
+rcutest: rcutest.c rcu.o rbtest.o
+rb_lrcu: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
+	$(CC) -c rbnode.c $(CFLAGS) $(RCUFLAGS)
+	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) -DLINEARIZABLE
+	$(CC) -c rbtree.c $(CFLAGS) $(RCUFLAGS)
+	$(CC) -c rbtest.c $(CFLAGS) $(RCUFLAGS)
+	$(CC) -o rb_lrcu $(LFLAGS) rbmain.c $(RCUFLAGS) rbnode.o rbtree.o rbtest.o rcu.o
 
 rcutest: rcutest.c rcu.o rbtest.o
 	$(CC) -o rcutest $(CFLAGS) rcutest.c -DRCU rcu.o
