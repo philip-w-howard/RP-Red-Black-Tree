@@ -126,7 +126,7 @@ static rbnode_t *restructure(rbtree_t *tree, rbnode_t *grandparent)
         {
             node = parent->left;
             // diag left
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(RCU)
             cprime = rbnode_copy(grandparent);
             tree->restructure_copies++;
             bprime = parent;
@@ -156,7 +156,7 @@ static rbnode_t *restructure(rbtree_t *tree, rbnode_t *grandparent)
                 bprime->parent = NULL;
                 rp_assign_pointer(tree->root, bprime);
             }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(RCU)
             rp_free(tree->lock, rbnode_free, grandparent);
 #endif
         } 
@@ -164,7 +164,7 @@ static rbnode_t *restructure(rbtree_t *tree, rbnode_t *grandparent)
         {
             // zig left
             node = parent->right;
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(RCU)
             cprime = rbnode_copy(grandparent);
             aprime = rbnode_copy(parent);
             bprime = node;
@@ -204,7 +204,7 @@ static rbnode_t *restructure(rbtree_t *tree, rbnode_t *grandparent)
                 bprime->parent = NULL;
                 rp_assign_pointer(tree->root, bprime);
             }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(RCU)
             rp_free(tree->lock, rbnode_free, parent);
             rp_free(tree->lock, rbnode_free, grandparent);
 #endif
@@ -219,7 +219,7 @@ static rbnode_t *restructure(rbtree_t *tree, rbnode_t *grandparent)
         {
             // diag right
             node = parent->right;
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(RCU)
             aprime = rbnode_copy(grandparent);
             tree->restructure_copies++;
             bprime = parent;
@@ -248,7 +248,7 @@ static rbnode_t *restructure(rbtree_t *tree, rbnode_t *grandparent)
                 bprime->parent = NULL;
                 rp_assign_pointer(tree->root, bprime);
             }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(RCU)
             rp_free(tree->lock, rbnode_free, grandparent);
 #endif
         }
@@ -256,7 +256,7 @@ static rbnode_t *restructure(rbtree_t *tree, rbnode_t *grandparent)
         {
             // zig right
             node = parent->left;
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(RCU)
             aprime = rbnode_copy(grandparent);
             cprime = rbnode_copy(parent);
             bprime = node;
@@ -296,7 +296,7 @@ static rbnode_t *restructure(rbtree_t *tree, rbnode_t *grandparent)
                 bprime->parent = NULL;
                 rp_assign_pointer(tree->root, bprime);
             }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(RCU)
             rp_free(tree->lock, rbnode_free, parent);
             rp_free(tree->lock, rbnode_free, grandparent);
 #endif
@@ -454,7 +454,7 @@ void *rb_remove(rbtree_t *tree, long key)
             prev = swap;
             next = swap->right;
         } else {
-#if defined(RCU) || defined(NO_GRACE_PERIOD)
+#if defined(RCU) 
             // exchange children of swap and node
 			rbnode_t *new_node = rbnode_copy(swap);
             //check_for(tree->root, new_node);

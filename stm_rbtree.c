@@ -185,7 +185,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
     if (LOAD(grandparent->left) == parent && LOAD(parent->left) == node)
     {
         // diag left
-#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
+#if defined(RCU) || defined(RP_STM)
         cprime = rbnode_copy(grandparent);
         //NOSTATS tree->restructure_copies++;
         bprime = parent;
@@ -215,14 +215,14 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
             STORE(bprime->parent, NULL);
             STORE_MB(tree->root, bprime);
         }
-#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
+#if defined(RCU) || defined(RP_STM)
         RP_FREE(tree->lock, rbnode_free, grandparent);
 #endif
     } 
     else if (LOAD(grandparent->left) == parent && LOAD(parent->right) == node)
     {
         // zig left
-#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
+#if defined(RCU) || defined(RP_STM)
         cprime = rbnode_copy(grandparent);
         aprime = rbnode_copy(parent);
         bprime = node;
@@ -262,7 +262,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
             STORE(bprime->parent, NULL);
             STORE_MB(tree->root, bprime);
         }
-#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
+#if defined(RCU) || defined(RP_STM)
         RP_FREE(tree->lock, rbnode_free, parent);
         RP_FREE(tree->lock, rbnode_free, grandparent);
 #endif
@@ -270,7 +270,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
     else if (LOAD(parent->right) == node && LOAD(grandparent->right) == parent)
     {
         // diag right
-#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
+#if defined(RCU) || defined(RP_STM)
         aprime = rbnode_copy(grandparent);
         //NOSTATS tree->restructure_copies++;
         bprime = parent;
@@ -299,14 +299,14 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
             STORE(bprime->parent, NULL);
             STORE_MB(tree->root, bprime);
         }
-#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
+#if defined(RCU) || defined(RP_STM)
         RP_FREE(tree->lock, rbnode_free, grandparent);
 #endif
     }
     else
     {
         // zig right
-#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
+#if defined(RCU) || defined(RP_STM)
         aprime = rbnode_copy(grandparent);
         cprime = rbnode_copy(parent);
         bprime = node;
@@ -346,7 +346,7 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
             STORE(bprime->parent, NULL);
             STORE_MB(tree->root, bprime);
         }
-#if defined(NO_GRACE_PERIOD) || defined(RCU) || defined(RP_STM)
+#if defined(RCU) || defined(RP_STM)
         RP_FREE(tree->lock, rbnode_free, parent);
         RP_FREE(tree->lock, rbnode_free, grandparent);
 #endif
@@ -543,7 +543,7 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
         else 
             z = LOAD(y->right);
         restructure(tree, x,y,z, &a, &b, &c);
-#if defined(RCU) || defined(NO_GRACE_PERIOD) || defined(RP_STM)
+#if defined(RCU) || defined(RP_STM)
 		// in RCU version, x always gets replaced. Figure out if it's c or a
         // NOTE: this is guaranteed to be a restructure that involves a single
         //       node copy, not a triple node copy
@@ -673,7 +673,7 @@ void *rb_remove(rbtree_t *tree, long key)
                 prev = swap;
                 next = LOAD(swap->right);
             } else {
-#if defined(RCU) || defined(NO_GRACE_PERIOD) || defined(RP_STM)
+#if defined(RCU) || defined(RP_STM)
                 // exchange children of swap and node
                 rbnode_t *new_node = rbnode_copy(swap);
                 //check_for(tree->root, new_node);

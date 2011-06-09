@@ -97,41 +97,56 @@ static void diag_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, r
     rbnode_t *aprime, *bprime, *cprime;
     rbnode_t *greatgrandparent = grandparent->parent;
     int left = 0;
+    rbnode_t *three;
 
     if (grandparent->parent != NULL) left = is_left(grandparent);
 
-    // diag left
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD)
     cprime = rbnode_copy(grandparent);
-    //NOSTATS tree->restructure_copies++;
+    bprime = rbnode_copy(parent);
+    aprime = node;
+    if (parent->right != NULL)
+        three = rbnode_copy(parent->right);
+    else
+        three = NULL;
+
+#elif defined(RCU)
+    cprime = rbnode_copy(grandparent);
     bprime = parent;
     aprime = node;
+    three = parent->right;
 #else
     aprime = node;
     bprime = parent;
     cprime = grandparent;
+    three = parent->right;
 #endif
-
-    cprime->left = bprime->right;
-    if (bprime->right != NULL) bprime->right->parent = cprime;
+    cprime->left = three;
+    if (three != NULL) three->parent = cprime;
         
-    rp_assign_pointer(bprime->right, cprime);
+    bprime->right = cprime;
     cprime->parent = bprime;
 
     if (greatgrandparent != NULL)
     {
+        bprime->parent = greatgrandparent;
+
         if (left) {
             rp_assign_pointer(greatgrandparent->left, bprime);
         } else {
             rp_assign_pointer(greatgrandparent->right, bprime);
         }
-
-        bprime->parent = greatgrandparent;
     } else {
         bprime->parent = NULL;
         rp_assign_pointer(tree->root, bprime);
     }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD)
+    aprime->parent = bprime;
+    if (cprime->right != NULL) cprime->right->parent = cprime;
+    rp_free(tree->lock, rbnode_free, parent);
+    rp_free(tree->lock, rbnode_free, grandparent);
+    if (parent->right != NULL) rp_free(tree->lock, rbnode_free, parent->right);
+#elif defined(RCU)
     rp_free(tree->lock, rbnode_free, grandparent);
 #endif
 
@@ -144,33 +159,51 @@ static void zig_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rb
                         rbnode_t **a, rbnode_t **b, rbnode_t **c)
 {
     rbnode_t *aprime, *bprime, *cprime;
+    rbnode_t *two, *three;
     rbnode_t *greatgrandparent = grandparent->parent;
     int left = 0;
 
     if (grandparent->parent != NULL) left = is_left(grandparent);
 
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD)
+    cprime = rbnode_copy(grandparent);
+    aprime = rbnode_copy(parent);
+    bprime = rbnode_copy(node);
+
+    if (bprime->left != NULL)
+    {
+        two = rbnode_copy(bprime->left);
+    } else {
+        two = NULL;
+    }
+    aprime->right = two;
+
+    if (bprime->right != NULL)
+    {
+        three = rbnode_copy(bprime->right);
+    } else {
+        three = NULL;
+    }
+#elif defined(RCU)
     cprime = rbnode_copy(grandparent);
     aprime = rbnode_copy(parent);
     bprime = node;
-    //NOSTATS tree->restructure_multi_copies++;
-
-    cprime->left = aprime;
-    aprime->parent = cprime;
-    aprime->right = bprime;
-    bprime->parent = aprime;
+    two = bprime->left;
+    three = bprime->right;
 #else
     aprime = parent;
     bprime = node;
     cprime = grandparent;
+    two = bprime->left;
+    three = bprime->right;
 #endif
-    aprime->right = bprime->left;
-    if (bprime->left != NULL) bprime->left->parent = aprime;
+    aprime->right = two;
+    if (two != NULL) two->parent = aprime;
 
-    cprime->left = bprime->right;
-    if (bprime->right != NULL) bprime->right->parent = cprime;
+    cprime->left = three;
+    if (three != NULL) three->parent = cprime;
 
-    rp_assign_pointer(bprime->left, aprime);
+    bprime->left = aprime;
     aprime->parent = bprime;
 
     bprime->right = cprime;
@@ -178,18 +211,26 @@ static void zig_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rb
 
     if (greatgrandparent != NULL)
     {
+        bprime->parent = greatgrandparent;
+
         if (left) {
             rp_assign_pointer(greatgrandparent->left, bprime);
         } else {
             rp_assign_pointer(greatgrandparent->right, bprime);
         }
-
-        bprime->parent = greatgrandparent;
     } else {
         bprime->parent = NULL;
         rp_assign_pointer(tree->root, bprime);
     }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD)
+    if (aprime->left != NULL) aprime->left->parent = aprime;
+    if (cprime->right != NULL) cprime->right->parent = cprime;
+    if(node->left != NULL) rp_free(tree->lock, rbnode_free, node->left);
+    if(node->right != NULL) rp_free(tree->lock, rbnode_free, node->right);
+    rp_free(tree->lock, rbnode_free, node);
+    rp_free(tree->lock, rbnode_free, parent);
+    rp_free(tree->lock, rbnode_free, grandparent);
+#elif defined(RCU)
     rp_free(tree->lock, rbnode_free, parent);
     rp_free(tree->lock, rbnode_free, grandparent);
 #endif
@@ -203,41 +244,57 @@ static void diag_right(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, 
                         rbnode_t **a, rbnode_t **b, rbnode_t **c)
 {
     rbnode_t *aprime, *bprime, *cprime;
+    rbnode_t *two;
     rbnode_t *greatgrandparent = grandparent->parent;
     int left = 0;
 
     if (grandparent->parent != NULL) left = is_left(grandparent);
 
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD)
     aprime = rbnode_copy(grandparent);
-    //NOSTATS tree->restructure_copies++;
+    bprime = rbnode_copy(parent);
+    cprime = node;
+    if (parent->left != NULL) 
+        two = rbnode_copy(parent->left);
+    else
+        two = NULL;
+#elif defined(RCU)
+    aprime = rbnode_copy(grandparent);
     bprime = parent;
     cprime = node;
+    two = parent->left;
 #else
     aprime = grandparent;
     bprime = parent;
     cprime = node;
+    two = parent->left;
 #endif
-    aprime->right = bprime->left;
-    if (bprime->left != NULL) bprime->left->parent = aprime;
+    aprime->right = two;
+    if (two != NULL) two->parent = aprime;
 
-    rp_assign_pointer(bprime->left, aprime);
+    bprime->left = aprime;
     aprime->parent = bprime;
 
     if (greatgrandparent != NULL)
     {
+        bprime->parent = greatgrandparent;
+
         if (left) {
             rp_assign_pointer(greatgrandparent->left, bprime);
         } else {
             rp_assign_pointer(greatgrandparent->right, bprime);
         }
-
-        bprime->parent = greatgrandparent;
     } else {
         bprime->parent = NULL;
         rp_assign_pointer(tree->root, bprime);
     }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD)
+    cprime->parent = bprime;
+    if (aprime->left != NULL) aprime->left->parent = aprime;
+    if (two != NULL) rp_free(tree->lock, rbnode_free, parent->left);
+    rp_free(tree->lock, rbnode_free, parent);
+    rp_free(tree->lock, rbnode_free, grandparent);
+#elif defined(RCU)
     rp_free(tree->lock, rbnode_free, grandparent);
 #endif
 
@@ -250,33 +307,47 @@ static void zig_right(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, r
                         rbnode_t **a, rbnode_t **b, rbnode_t **c)
 {
     rbnode_t *aprime, *bprime, *cprime;
+    rbnode_t *two, *three;
     rbnode_t *greatgrandparent = grandparent->parent;
     int left = 0;
 
     if (grandparent->parent != NULL) left = is_left(grandparent);
 
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD)
+    aprime = rbnode_copy(grandparent);
+    bprime = rbnode_copy(node);
+    cprime = rbnode_copy(parent);
+    if (bprime->left != NULL)
+        two = rbnode_copy(bprime->left);
+    else
+        two = NULL;
+    if (bprime->right != NULL)
+        three = rbnode_copy(bprime->right);
+    else
+        three = NULL;
+#elif defined(RCU)
     aprime = rbnode_copy(grandparent);
     cprime = rbnode_copy(parent);
     bprime = node;
-    //NOSTATS tree->restructure_multi_copies++;
-
-    aprime->right = cprime;
-    cprime->parent = aprime;
-    cprime->left = bprime;
-    bprime->parent = cprime;
+    two = bprime->left;
+    three = bprime->right;
 #else
     aprime = grandparent;
     bprime = node;
     cprime = parent;
+    two = bprime->left;
+    three = bprime->right;
 #endif
-    aprime->right = bprime->left;
-    if (bprime->left != NULL) bprime->left->parent = aprime;
+    aprime->right = two;
+    if (two != NULL) two->parent = aprime;
 
-    cprime->left = bprime->right;
-    if (bprime->right != NULL) bprime->right->parent = cprime;
+    cprime->left = three;
+    if (three != NULL) three->parent = cprime;
 
     rp_assign_pointer(bprime->left, aprime);
+    aprime->parent = bprime;
+
+    bprime->left = aprime;
     aprime->parent = bprime;
 
     bprime->right = cprime;
@@ -284,18 +355,26 @@ static void zig_right(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, r
 
     if (greatgrandparent != NULL)
     {
+        bprime->parent = greatgrandparent;
+
         if (left) {
             rp_assign_pointer(greatgrandparent->left, bprime);
         } else {
             rp_assign_pointer(greatgrandparent->right, bprime);
         }
-
-        bprime->parent = greatgrandparent;
     } else {
         bprime->parent = NULL;
         rp_assign_pointer(tree->root, bprime);
     }
-#if defined(NO_GRACE_PERIOD) || defined(RCU)
+#if defined(NO_GRACE_PERIOD)
+    if (aprime->left != NULL) aprime->left->parent = aprime;
+    if (cprime->right != NULL) cprime->right->parent = cprime;
+    if (node->left != NULL) rp_free(tree->lock, rbnode_free, node->left);
+    if (node->right != NULL) rp_free(tree->lock, rbnode_free, node->right);
+    rp_free(tree->lock, rbnode_free, node);
+    rp_free(tree->lock, rbnode_free, parent);
+    rp_free(tree->lock, rbnode_free, grandparent);
+#elif defined(RCU)
     rp_free(tree->lock, rbnode_free, parent);
     rp_free(tree->lock, rbnode_free, grandparent);
 #endif
@@ -305,7 +384,11 @@ static void zig_right(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, r
     *c = cprime;
 }
 //*******************************
-static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
+#define DIAG_LEFT  1
+#define ZIG_LEFT   2
+#define DIAG_RIGHT 3
+#define ZIG_RIGHT  4
+static int restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rbnode_t *node,
                         rbnode_t **a, rbnode_t **b, rbnode_t **c)
 {
     //NOSTATS tree->restructures++;
@@ -313,19 +396,25 @@ static void restructure(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent,
     if (grandparent->left == parent && parent->left == node)
     {
         diag_left(tree, grandparent, parent, node, a, b, c);
+        return DIAG_LEFT;
     } 
     else if (grandparent->left == parent && parent->right == node)
     {
         zig_left(tree, grandparent, parent, node, a, b, c);
+        return ZIG_LEFT;
     }
     else if (parent->right == node && grandparent->right == parent)
     {
         diag_right(tree, grandparent, parent, node, a, b, c);
+        return DIAG_RIGHT;
     }
     else
     {
         zig_right(tree, grandparent, parent, node, a, b, c);
+        return ZIG_RIGHT;
     }
+
+    return 0;
 }
 //*******************************
 static void recolor(rbtree_t *tree, rbnode_t *node)
@@ -437,6 +526,7 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
 {
     rbnode_t *z;
     rbnode_t *a, *b, *c;
+    int rest_type;
 
     if (y->color == BLACK)
     {
@@ -476,16 +566,35 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
             z = y->left;
         else 
             z = y->right;
-        restructure(tree, x,y,z, &a, &b, &c);
+        rest_type = restructure(tree, x,y,z, &a, &b, &c);
 #if defined(RCU) || defined(NO_GRACE_PERIOD)
 		// in RCU version, x always gets replaced. Figure out if it's c or a
-        // NOTE: this is guaranteed to be a restructure that involves a single
-        //       node copy, not a triple node copy
-        assert(c==z || a==z);
-		if (c == z)
-			x = a;
-		else
-			x = c;
+        // NOTE: this is guaranteed to be a DIAG restructure, but we'll code
+        //       for all cases just for completeness.
+        assert (rest_type==DIAG_LEFT || rest_type==DIAG_RIGHT);
+        switch(rest_type)
+        {
+            case DIAG_LEFT:
+                x = c;
+                y = b;
+                z = a;
+                break;
+            case ZIG_LEFT:
+                x = c;
+                y = a;
+                z = b;
+                break;
+            case DIAG_RIGHT:
+                x = a;
+                y = b;
+                z = c;
+                break;
+            case ZIG_RIGHT:
+                x = a;
+                y = c;
+                z = b;
+                break;
+        }
 #endif
 
 		y->color = BLACK;
@@ -496,6 +605,7 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
         else
             y = x->left;
 
+        assert(r == sibling(y));
         double_black_node(tree, x, y, r);
     }
 }
@@ -566,7 +676,7 @@ void *rb_remove(rbtree_t *tree, long key)
             prev = swap;
             next = swap->right;
         } else {
-#if defined(RCU) || defined(NO_GRACE_PERIOD)
+#if defined(RCU) 
             // exchange children of swap and node
 			rbnode_t *new_node = rbnode_copy(swap);
             //check_for(tree->root, new_node);

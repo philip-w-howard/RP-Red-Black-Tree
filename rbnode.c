@@ -203,7 +203,7 @@ rbnode_t *rbnode_copy(rbnode_t *node)
 #ifdef STM
 	if (LOAD(node->left)  != NULL) STORE(LOAD(node->left)->parent, newnode);
 	if (LOAD(node->right) != NULL) STORE(LOAD(node->right)->parent, newnode);
-#else
+#elif !defined(NO_GRACE_PERIOD)
 	if (node->left  != NULL) node->left->parent = newnode;
 	if (node->right != NULL) node->right->parent = newnode;
 #endif

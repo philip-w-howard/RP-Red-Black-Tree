@@ -34,7 +34,7 @@
 void rp_wait_grace_period(void *lock);
 void rp_free(void *lock, void (*func)(void *ptr), void *ptr);
 
-#elif defined(RCU) || defined(NO_GRACE_PERIOD)
+#elif defined(RCU)
 
 /* Assume DEC Alpha is dead.  Long live DEC Alpha. */
 #define rp_dereference(p) (*(volatile typeof(p) *)&(p))
