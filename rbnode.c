@@ -92,6 +92,15 @@ static void *rb_alloc()
     return &(ptr->node);
 }
 //***********************************
+static void check_stack(void *ptr)
+{
+    int ii;
+    for (ii=0; ii<Top; ii++)
+    {
+        assert(Block[ii] != ptr);
+    }
+}
+//***********************************
 void rbnode_free(void *ptr)
 {
     //int ii;
@@ -117,6 +126,7 @@ void rbnode_free(void *ptr)
     */
 
 #if !defined(URCU) && !defined(STM)
+    check_stack(eptr);
     if (Top < STACK_SIZE)
     {
         Block[Top++] = eptr;

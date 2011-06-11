@@ -143,9 +143,17 @@ static void diag_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, r
 #if defined(NO_GRACE_PERIOD)
     aprime->parent = bprime;
     if (cprime->right != NULL) cprime->right->parent = cprime;
+
+    if (three != NULL) 
+    {
+        if (three->left != NULL) three->left->parent = three;
+        if (three->right != NULL) three->right->parent = three;
+
+        rp_free(tree->lock, rbnode_free, parent->right);
+    }
+    
     rp_free(tree->lock, rbnode_free, parent);
     rp_free(tree->lock, rbnode_free, grandparent);
-    if (parent->right != NULL) rp_free(tree->lock, rbnode_free, parent->right);
 #elif defined(RCU)
     rp_free(tree->lock, rbnode_free, grandparent);
 #endif
@@ -176,7 +184,6 @@ static void zig_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rb
     } else {
         two = NULL;
     }
-    aprime->right = two;
 
     if (bprime->right != NULL)
     {
@@ -225,8 +232,20 @@ static void zig_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rb
 #if defined(NO_GRACE_PERIOD)
     if (aprime->left != NULL) aprime->left->parent = aprime;
     if (cprime->right != NULL) cprime->right->parent = cprime;
-    if(node->left != NULL) rp_free(tree->lock, rbnode_free, node->left);
-    if(node->right != NULL) rp_free(tree->lock, rbnode_free, node->right);
+
+    if(two != NULL) 
+    {
+        if (two->left != NULL) two->left->parent = two;
+        if (two->right != NULL) two->right->parent = two;
+        rp_free(tree->lock, rbnode_free, node->left);
+    }
+
+    if(three != NULL) 
+    {
+        if (three->left != NULL) three->left->parent = three;
+        if (three->right != NULL) three->right->parent = three;
+        rp_free(tree->lock, rbnode_free, node->right); 
+    }
     rp_free(tree->lock, rbnode_free, node);
     rp_free(tree->lock, rbnode_free, parent);
     rp_free(tree->lock, rbnode_free, grandparent);
@@ -291,7 +310,13 @@ static void diag_right(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, 
 #if defined(NO_GRACE_PERIOD)
     cprime->parent = bprime;
     if (aprime->left != NULL) aprime->left->parent = aprime;
-    if (two != NULL) rp_free(tree->lock, rbnode_free, parent->left);
+
+    if (two != NULL) 
+    {
+        if (two->left != NULL) two->left->parent = two;
+        if (two->right != NULL) two->right->parent = two;
+        rp_free(tree->lock, rbnode_free, parent->left);
+    }
     rp_free(tree->lock, rbnode_free, parent);
     rp_free(tree->lock, rbnode_free, grandparent);
 #elif defined(RCU)
@@ -344,9 +369,6 @@ static void zig_right(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, r
     cprime->left = three;
     if (three != NULL) three->parent = cprime;
 
-    rp_assign_pointer(bprime->left, aprime);
-    aprime->parent = bprime;
-
     bprime->left = aprime;
     aprime->parent = bprime;
 
@@ -369,8 +391,21 @@ static void zig_right(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, r
 #if defined(NO_GRACE_PERIOD)
     if (aprime->left != NULL) aprime->left->parent = aprime;
     if (cprime->right != NULL) cprime->right->parent = cprime;
-    if (node->left != NULL) rp_free(tree->lock, rbnode_free, node->left);
-    if (node->right != NULL) rp_free(tree->lock, rbnode_free, node->right);
+
+    if (two != NULL) 
+    {
+        if (two->left != NULL) two->left->parent = two;
+        if (two->right != NULL) two->right->parent = two;
+        rp_free(tree->lock, rbnode_free, node->left);
+    }
+
+    if (three != NULL) 
+    {
+        if (three->left != NULL) three->left->parent = three;
+        if (three->right != NULL) three->right->parent = three;
+        rp_free(tree->lock, rbnode_free, node->right);    
+    }
+
     rp_free(tree->lock, rbnode_free, node);
     rp_free(tree->lock, rbnode_free, parent);
     rp_free(tree->lock, rbnode_free, grandparent);
@@ -568,7 +603,8 @@ static void double_black_node(rbtree_t *tree, rbnode_t *x, rbnode_t *y, rbnode_t
             z = y->right;
         rest_type = restructure(tree, x,y,z, &a, &b, &c);
 #if defined(RCU) || defined(NO_GRACE_PERIOD)
-		// in RCU version, x always gets replaced. Figure out if it's c or a
+		// in RCU versions, some nodes get replaced. Fix up so pointers 
+        // point to correct new nodes.
         // NOTE: this is guaranteed to be a DIAG restructure, but we'll code
         //       for all cases just for completeness.
         assert (rest_type==DIAG_LEFT || rest_type==DIAG_RIGHT);
@@ -624,6 +660,63 @@ static void double_black(rbtree_t *tree, rbnode_t *r)
 	}
 }
 //*******************************
+#ifdef NO_GRACE_PERIOD
+static void copy_to_leftmost(rbnode_t *node, rbnode_t **node_right, rbnode_t **swap_prime)
+{
+    rbnode_t *right;
+    rbnode_t *curr, *next;
+
+    right = rbnode_copy(node->right);
+    curr = right;
+    while (curr->left != NULL)
+    {
+        next = rbnode_copy(curr->left);
+        next->parent = curr;
+        curr->left = next;
+        curr = next;
+    }
+
+    // if not the special case of leftmost == right, then delete the node
+    // at the end of the chain (i.e. pull swap out of the tree)
+    if (curr != right) curr->parent->left = NULL;
+    *swap_prime = curr;
+    *node_right = right;
+}
+#endif
+//*******************************
+#ifdef NO_GRACE_PERIOD
+// fixup the parent pointers of the non-copied childred to point to the 
+// new nodes
+static void fixup_to_leftmost(rbnode_t *node)
+{
+    node->left->parent = node;
+    node = node->right;
+
+    while (node != NULL)
+    {
+        if (node->right != NULL) node->right->parent = node;
+        node = node->left;
+    }
+}
+#endif
+//*******************************
+#ifdef NO_GRACE_PERIOD
+// rp_free all the duplicates that we made with the exception of node. We
+// use node later and it is freed at the end.
+static void cleanup_to_leftmost(rbtree_t *tree, rbnode_t *node)
+{
+    rbnode_t *next;
+    node = node->right;
+
+    while (node != NULL)
+    {
+        next = node->left;
+        rp_free(tree, rbnode_free, node);
+        node = next;
+    }
+}
+#endif
+//*******************************
 void *rb_remove(rbtree_t *tree, long key)
 {
 	rbnode_t *node;
@@ -651,6 +744,56 @@ void *rb_remove(rbtree_t *tree, long key)
     //******************* swap with external node if necessary ***************
 	if (node->left != NULL && node->right != NULL)
     {
+#if defined(ZZZNO_GRACE_PERIOD)
+        rbnode_t *n_prev, *n_next;
+
+        // need to copy all nodes on path from node to swap
+        rbnode_t *node_right;
+        copy_to_leftmost(node, &node_right, &swap);
+
+        // save prev, next for later
+        // need to do a swap with leftmost on right branch
+        if (swap == node_right)
+            n_prev = node->parent;
+        else
+            n_prev = swap->parent;
+        n_next = swap->right;
+
+        // get colors right
+        temp_color = swap->color;
+        swap->color = node->color;
+        node->color = temp_color;
+
+        // move swap up into top of subtree
+        swap->left = node->left;
+        // treat special case of swap == node->right as special
+        if (swap != node_right)
+        {
+            swap->right = node_right;
+            node_right->parent = swap;
+        }
+        // fixup swap_prime->left->parent after we link swap_prime into tree
+
+        swap->parent = prev;
+
+        if (prev == NULL) {
+            rp_assign_pointer(tree->root, swap);
+        } else {
+            if (prev->left == node) {
+                rp_assign_pointer(prev->left, swap);
+            } else {
+                rp_assign_pointer(prev->right, swap);
+            }
+        }
+
+        fixup_to_leftmost(swap);
+        cleanup_to_leftmost(tree, node);
+
+        // save prev, next for later
+        // need to do a swap with leftmost on right branch
+        prev = n_prev;
+        next = n_next;
+#else
         // need to do a swap with leftmost on right branch
         swap = leftmost(node->right);
         temp_color = swap->color;
@@ -741,8 +884,9 @@ void *rb_remove(rbtree_t *tree, long key)
 				}
                 swap->parent = node->parent;
             }
-#endif
+#endif      // RCU
         }
+#endif      // NO_GRACE_PERIOD
     } else {
         // the node is guaranteed to have a terminal child
         prev = node->parent;

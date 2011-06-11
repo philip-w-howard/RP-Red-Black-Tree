@@ -8,6 +8,21 @@ void check_tree();
 unsigned long *Values;
 rbtree_t      *My_Tree;
 
+void check_tree()
+{
+    if (!rb_valid(My_Tree)) 
+    {
+        printf("******* INVALID TREE **********\n");
+        printf("******* INVALID TREE **********\n");
+        printf("******* INVALID TREE **********\n");
+        printf("******* INVALID TREE **********\n");
+        rb_output_list(My_Tree);
+        exit(1);
+    } else {
+        //rb_output(My_Tree);
+    }
+}
+//*******************************
 void *Init_Data(int count, void *lock, param_t *params)
 {
     int ii;
@@ -25,6 +40,9 @@ void *Init_Data(int count, void *lock, param_t *params)
         {
             value = get_random(&seed) % params->scale + 1;
         }
+        //printf("Insert %ld\n", value);
+        check_tree();
+
         Values[ii] = value;
     }
 
@@ -140,20 +158,6 @@ int Update(unsigned long *random_seed, param_t *params)
     return errors;
 }
 #endif
-void check_tree()
-{
-    if (!rb_valid(My_Tree)) 
-    {
-        printf("******* INVALID TREE **********\n");
-        printf("******* INVALID TREE **********\n");
-        printf("******* INVALID TREE **********\n");
-        printf("******* INVALID TREE **********\n");
-        rb_output_list(My_Tree);
-        exit(1);
-    } else {
-        rb_output(My_Tree);
-    }
-}
 int Insert(unsigned long *random_seed, param_t *params)
 {
     int errors = 0;
@@ -171,14 +175,19 @@ int Write(unsigned long *random_seed, param_t *params)
     void *value;
     long int_value;
 
+    check_tree();
     write_elem = get_random(random_seed) % params->size;
+    //printf("Remove %ld\n", Values[write_elem]);
     value = rb_remove(My_Tree, Values[write_elem]);
     if (value == NULL) errors++;
 
+    check_tree();
     int_value = get_random(random_seed) % params->scale + 1;
+    //printf("Insert %ld\n", int_value);
     while ( !rb_insert(My_Tree, int_value, (void *)int_value) )
     {
         int_value = get_random(random_seed) % params->scale + 1;
+        //printf("Insert %ld\n", int_value);
     }
     Values[write_elem] = int_value;
 

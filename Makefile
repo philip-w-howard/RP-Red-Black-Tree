@@ -13,6 +13,7 @@ endif
 URCUFLAGS = -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE
 FGFLAGS = -DFG_LOCK
 RCUFLAGS = -DRCU
+NGPFLAGS = $(RCUFLAGS) -DNO_GRACE_PERIOD
 MULTIFLAGS = -DMULTIWRITERS
 AVLFLAGS = $(MULTIFLAGS) $(FGFLAGS)
 STMFLAGS = -DSTM -I/u/pwh/swissTM/swissTM_word/include # -DRPSTM_STATS # -DRP_FINDS -DRP_UPDATE
@@ -164,18 +165,19 @@ ll_rwlr: rbmain.c lltest.o rwl_read.o
 	$(CC) -c rbtest.c $(CFLAGS)
 	$(CC) -o ll_rwlr $(LFLAGS) rbmain.c rwl_read.o lltest.o
 
-ngp: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
-	$(CC) -c rbnode.c $(CFLAGS) 
-	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) 
-	$(CC) -c rbtree.c $(CFLAGS) -DNO_GRACE_PERIOD
-	$(CC) -o ngp $(LFLAGS) rbmain.c rbtest.o $(RCUFLAGS) rbnode.o rbtree.o rcu.o
+ngp: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c 
+	$(CC) -c rbtest.c $(CFLAGS) $(NGPFLAGS)
+	$(CC) -c rbnode.c $(CFLAGS)  $(NGPFLAGS)
+	$(CC) -c rcu.c $(CFLAGS)  $(NGPFLAGS)
+	$(CC) -c rbtree.c $(CFLAGS)  $(NGPFLAGS)
+	$(CC) -o ngp $(LFLAGS) $(NGPFLAGS) rbmain.c rbtest.o rbnode.o rbtree.o rcu.o
 
 rb_rcu: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
 	$(CC) -c rbnode.c $(CFLAGS) $(RCUFLAGS)
 	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS)
 	$(CC) -c rbtree.c $(CFLAGS) $(RCUFLAGS)
 	$(CC) -c rbtest.c $(CFLAGS) $(RCUFLAGS)
-	$(CC) -o rb_rcu $(LFLAGS) rbmain.c $(RCUFLAGS) rbnode.o rbtree.o rbtest.o rcu.o
+	$(CC) -o rb_rcu $(LFLAGS) $(RCUFLAGS) rbmain.c rbnode.o rbtree.o rbtest.o rcu.o
 
 rcutest: rcutest.c rcu.o rbtest.o
 rb_lrcu: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
