@@ -27,7 +27,7 @@ STM_LFLAGS = -L/u/pwh/swissTM/swissTM_word/lib
 
 CC = gcc
 
-TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lrcu rb_lock rb_nolock rb_stm rb_rpstm rb_rpstm_rp parse ngp ccavl rpavl # stmbad # ccavl rpavl rwlravl rwlwavl lockavl nolockavl rcutest ll_rwlr # rb_urcu urcutest 
+TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lrcu rb_lock rb_nolock rb_stm rb_rpstm rb_rpstm_rp parse ngp ccavl rpavl parse csvparse # stmbad # ccavl rpavl rwlravl rwlwavl lockavl nolockavl rcutest ll_rwlr # rb_urcu urcutest 
 all: $(TARGETS)
 
 stuff: aotest
@@ -67,8 +67,7 @@ rpavl: rbmain.c rpavl.c avl.h rcu.c rbtest.o
 	$(CC) -c rbnode.c $(CFLAGS) $(RCUFLAGS)
 	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS)
 	$(CC) -c rpavl.c $(CFLAGS) $(RCUFLAGS)
-	$(CC) -o rpavl $(LFLAGS) rbmain.c rbtest.o rbnode.o rpavl.o rcu.o $(RCUFLAGS)
-
+	$(CC) -o rpavl $(LFLAGS) rbmain.c rbtest.o rbnode.o rpavl.o rcu.o $(RCUFLAGS) -DALG_NAME=\"rpavl\" 
 stmtest: rbmain.c stmtest.c stm.c
 	$(CC) -c stm.c $(CFLAGS) $(STMFLAGS)
 	$(CC) -c stmtest.c $(CFLAGS) $(STMFLAGS)
@@ -139,11 +138,11 @@ rwlwavl: rbmain.c rpavl.c avl.h rwl_write.o rbtest.c
 	$(CC) -c rpavl.c $(CFLAGS)
 	$(CC) -o rwlwavl $(LFLAGS) rbmain.c rbtest.o rbnode.o rpavl.o rwl_write.o
 
-ccavl: rbmain.c ccavl.c avl.h rbtest.c rwl_write.o
+ccavl: rbmain.c ccavl.c avl.h rbtest.c rwl_write.o Makefile
 	$(CC) -c rbtest.c $(CFLAGS) $(AVLFLAGS)
 	$(CC) -c rbnode.c $(CFLAGS) $(AVLFLAGS)
 	$(CC) -c ccavl.c $(CFLAGS) $(AVLFLAGS)
-	$(CC) -o ccavl $(LFLAGS) rbmain.c rbtest.o rbnode.o ccavl.o rwl_write.o $(AVLFLAGS)
+	$(CC) -o ccavl $(LFLAGS) rbmain.c rbtest.o rbnode.o ccavl.o rwl_write.o $(AVLFLAGS) -DALG_NAME=\"ccavl\"
 
 rb_rwl_write: rbmain.c rbnode.c rbtree.c rwl_write.o rbtest.c
 	$(CC) -c rbtest.c $(CFLAGS)

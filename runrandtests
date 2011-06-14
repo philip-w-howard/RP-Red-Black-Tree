@@ -1,19 +1,19 @@
 #! /bin/bash
 
 rm -f redblack.log
-for SIZE in 64 65536 ; do
+for SIZE in 65536 ; do
   #for MODE in TRAVERSE TRAVERSEN ; do
     SCALE=$[ $SIZE*2 ]
-    for ((ii=0; ii<1; ii++)); do
+    for ((ii=0; ii<4; ii++)); do
         #for UPDATE in 0 2 100 1000 10000 20000 50000 100000 500000 1000000; do
-        for UPDATE in 1000000; do
+        for UPDATE in 0 1000000; do
         #for UPDATE in 1000 10000 50000 100000 ; do
             #for CPUS in 16; do
-            for CPUS in 1 2 3 4 6 8 12 16 ; do
+            for CPUS in 1 2 3 4 6 8 10 12 14 16 ; do
             #for CPUS in {1..16}; do
             #for CPUS in 1 2 3 4 5 6 7 8 12 16 24 32 40 48 56 64; do
             #for CPUS in 1 2 4 8 16 32 64; do
-                for TEST in rb_rpstm_rp rb_stm rpavl ccavl ; do
+                for TEST in rb_rcu rb_rpstm_rp rb_stm rpavl ccavl ; do
                 #for TEST in rb_rcu rb_lrcu rb_rwl_write rb_rwl_read; do
                 #for TEST in rp_nolock rb_rcu rb_rpstm_rp rb_rpstm rb_stm; do
                     echo "Iteration " $ii $TEST r:$CPUS u:$UPDATE s:$SIZE S:$SCALE
@@ -26,5 +26,5 @@ for SIZE in 64 65536 ; do
 done
 
 awk -f decoderand.awk redblack.log >redblack.txt
-parse redblack.txt stmrand.txt -avg
+parse redblack.txt avlrand.txt -avg
 

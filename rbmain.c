@@ -259,6 +259,12 @@ void parse_args(int argc, char *argv[])
     char *param, *value;
     char arg[1000];
 
+#ifdef ALG_NAME
+    strcpy(Params.name, ALG_NAME);
+#else
+    strcpy(Params.name, implementation_name());
+#endif
+
     for (ii=1; ii<argc; ii++)
     {
         strcpy(arg, argv[ii]);
@@ -302,6 +308,9 @@ void parse_args(int argc, char *argv[])
                 }
                 else
                     usage(argc, argv, argv[ii]);
+                break;
+            case 'n':
+                if (strlen(value) != 0) strcpy(Params.name, value);
                 break;
             case 'p':
                 Params.poll_rcu = atoi(value);
@@ -371,7 +380,7 @@ int main(int argc, char *argv[])
     }
 
     printf("Test: %s %d readers %d writers %d mode %d %d %d %d\n", 
-            implementation_name(), Params.size,
+            Params.name, Params.size,
             Params.readers, Params.writers, Params.mode, Params.scale, 
             NUM_CPUS, Params.update_percent);
 

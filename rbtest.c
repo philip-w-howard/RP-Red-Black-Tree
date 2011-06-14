@@ -41,7 +41,7 @@ void *Init_Data(int count, void *lock, param_t *params)
             value = get_random(&seed) % params->scale + 1;
         }
         //printf("Insert %ld\n", value);
-        check_tree();
+        //check_tree();
 
         Values[ii] = value;
     }
@@ -175,13 +175,13 @@ int Write(unsigned long *random_seed, param_t *params)
     void *value;
     long int_value;
 
-    check_tree();
+    //check_tree();
     write_elem = get_random(random_seed) % params->size;
     //printf("Remove %ld\n", Values[write_elem]);
     value = rb_remove(My_Tree, Values[write_elem]);
     if (value == NULL) errors++;
 
-    check_tree();
+    //check_tree();
     int_value = get_random(random_seed) % params->scale + 1;
     //printf("Insert %ld\n", int_value);
     while ( !rb_insert(My_Tree, int_value, (void *)int_value) )

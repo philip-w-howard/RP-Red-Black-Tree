@@ -92,6 +92,7 @@ typedef struct
     int insert_percent;
     int delete_percent;
     int stm_stats;
+    char name[100];
 } param_t;
 
 unsigned long init_random_seed();
