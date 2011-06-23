@@ -18,7 +18,7 @@ MULTIFLAGS = -DMULTIWRITERS
 AVLFLAGS = $(MULTIFLAGS) $(FGFLAGS)
 STMFLAGS = -DSTM -I/u/pwh/swissTM/swissTM_word/include # -DRPSTM_STATS # -DRP_FINDS -DRP_UPDATE
 RPSTMFLAGS = -DRP_STM
-CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) -O0 # -pg 
+CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) -O0 # -DDEBUG # -pg 
 LFLAGS = -lrt $(CFLAGS)
 STM_LIB = -lwlpdstm
 STMRP_LIB = -lwlpdstm_rp
@@ -169,7 +169,7 @@ ngp: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
 	$(CC) -c rbnode.c $(CFLAGS)  $(NGPFLAGS)
 	$(CC) -c rcu.c $(CFLAGS)  $(NGPFLAGS)
 	$(CC) -c rbtree.c $(CFLAGS)  $(NGPFLAGS)
-	$(CC) -o ngp $(LFLAGS) $(NGPFLAGS) rbmain.c rbtest.o rbnode.o rbtree.o rcu.o
+	$(CC) -o ngp $(LFLAGS) $(NGPFLAGS) rbmain.c rbtest.o rbnode.o rbtree.o rcu.o -DALG_NAME=\"ngp\" 
 
 rb_rcu: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
 	$(CC) -c rbnode.c $(CFLAGS) $(RCUFLAGS)

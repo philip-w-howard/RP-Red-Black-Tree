@@ -36,7 +36,6 @@ int main(int argc, char **argv)
 {
     int num_cols;
     int curr_col;
-    char *filename;
     FILE *infile, *outfile;
     char buff[2048];
     char *item1, *item2;

@@ -63,6 +63,8 @@ typedef struct
 #define MODE_WRITE          1
 #define MODE_RANDOM         2
 #define MODE_NOOP           3
+#define MODE_TRAVERSE       4
+#define MODE_TRAVERSEN      5
 
 #define UPDATE_MAX          1000000 // used to compute update percent rate
 typedef struct

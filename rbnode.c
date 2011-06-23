@@ -128,7 +128,9 @@ void rbnode_free(void *ptr)
     */
 
 #if !defined(URCU) && !defined(STM)
-    //check_stack(eptr);
+#ifdef DEBUG
+    check_stack(eptr);
+#endif
     if (Top < STACK_SIZE)
     {
         Block[Top++] = eptr;
@@ -193,7 +195,11 @@ rbnode_t *rbnode_create(long key, void *value)
 //***********************************
 rbnode_t *rbnode_copy(rbnode_t *node)
 {
-	rbnode_t *newnode = (rbnode_t *)rb_alloc();
+	rbnode_t *newnode;
+
+    if (node == NULL) return NULL;
+
+	newnode = (rbnode_t *)rb_alloc();
 #ifdef STM
     STORE(newnode->key, LOAD(node->key));
     STORE(newnode->value, LOAD(node->value));
@@ -231,9 +237,16 @@ int rbnode_invalid(rbnode_t *node, int depth)
 {
     extended_node_t *eptr;
     long long *sptr;
+    rbnode_t *only_child = NULL;
 
     if (depth > 32) return 1;
     if (node == NULL) return 0;
+
+    sptr = (long long *)node;
+    eptr = (extended_node_t *)&sptr[-1];
+    assert(eptr->band1 == 0x0BADBAD0);
+    assert(eptr->band2 == 0x0DABDAB0);
+
     if (node->left  != NULL && node->key < node->left->key)  return 2;
     if (node->right != NULL && node->key > node->right->key) return 3;
     if (node->left  != NULL && node->left->parent != node)   return 4;
@@ -243,11 +256,13 @@ int rbnode_invalid(rbnode_t *node, int depth)
     //if (node->height != 1+MAX(height(node->left), height(node->right))) return 7;
     //if (node->changeOVL & 0x07LL) return 8;
 
-    sptr = (long long *)node;
-    eptr = (extended_node_t *)&sptr[-1];
-    //printf("rb_free %p %p\n", ptr, eptr);
-    if (eptr->band1 != 0x0BADBAD0) return 6;
-    if (eptr->band2 != 0x0DABDAB0) return 7;
+    if (node->left != NULL && node->right == NULL) only_child = node->left;
+    if (node->left == NULL && node->right != NULL) only_child = node->right;
+
+    if (only_child != NULL && only_child->color==BLACK) return 6;
+
+    //if (eptr->band1 != 0x0BADBAD0) return 6;
+    //if (eptr->band2 != 0x0DABDAB0) return 7;
 
     return 0;
 }

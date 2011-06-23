@@ -6,13 +6,14 @@ for SIZE in 64 65536 ; do
   SCALE=$[ 100*$SIZE ]
     #for MODE in TRAVERSE TRAVERSEN ; do
     for ACCESS in READ WRITE; do
-        for ((ii=0; ii<1; ii++)); do
+        for ((ii=0; ii<4; ii++)); do
             #for CPUS in {1..16}; do
             #for CPUS in 1 2 3 4 5 6 7 8 12 16 24 32 40 48 56 64; do
             #for CPUS in 1 2 4 8 16 32 64; do
             for CPUS in 1 2 4 8 12 16; do
                 #for TEST in rb_nolock rb_rcu rb_stm rb_rpstm rb_rpstm_rp; do
-                for TEST in rb_rpstm_rp rb_stm rpavl ccavl ; do
+                for TEST in rb_rcu ngp; do
+                #for TEST in rb_rpstm_rp rb_stm rpavl ccavl ; do
                 #for TEST in ccavl rpavl rwlravl rwlwavl lockavl nolockavl ; do
                     if [ $ACCESS == WRITE ] ; then
                         READERS=$[ $CPUS-1 ]

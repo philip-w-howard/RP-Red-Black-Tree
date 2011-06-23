@@ -61,7 +61,7 @@ unsigned long init_random_seed()
     clock_gettime(CLOCK_REALTIME, &cur_time);
     seed = cur_time.tv_sec + cur_time.tv_nsec;
 
-//seed = 12348234767;
+seed = 0x753a428b754c985d;
 
     return seed;
 }
@@ -224,6 +224,24 @@ void *thread_func(void *arg)
                 }
             }
             break;
+        case MODE_TRAVERSE:
+            while (goflag == GOFLAG_RUN) 
+            {
+                if (Traverse(&random_seed, &Params))
+                    n_read_fails++;
+                else
+                    n_reads++;
+            }
+            break;
+        case MODE_TRAVERSEN:
+            while (goflag == GOFLAG_RUN) 
+            {
+                if (TraverseN(&random_seed, &Params))
+                    n_read_fails++;
+                else
+                    n_reads++;
+            }
+            break;
     }
 
     lock_thread_close(thread_data->lock, thread_index);
@@ -299,13 +317,19 @@ void parse_args(int argc, char *argv[])
                     Params.mode = MODE_RANDOM;
                 else if (strcmp(value, "TEST") == 0)
                 {
-                    Params.mode = MODE_RANDOM;
+                    Params.mode = MODE_TRAVERSE;
                     Params.update_percent = 0;
                     Params.delete_percent = Params.update_percent/2;
                     Params.insert_percent = Params.update_percent/2;
-                    Params.size = 65536;
-                    Params.scale = Params.size*2;
+                    Params.size = 16;
+                    Params.scale = 999;
+                    Params.readers = 1;
+                    Params.writers = 1;
                 }
+                else if (strcmp(value, "TRAVERSE") == 0)
+                    Params.mode = MODE_TRAVERSE;
+                else if (strcmp(value, "TRAVERSEN") == 0)
+                    Params.mode = MODE_TRAVERSEN;
                 else
                     usage(argc, argv, argv[ii]);
                 break;
@@ -358,7 +382,9 @@ void parse_args(int argc, char *argv[])
 void thread_stuck(int id)
 {
     fprintf(stderr, "Thread %d failed to terminate\n", id);
-    //sleep(100000);
+#ifdef DEBUG
+    sleep(1000000);
+#endif
     exit(-4);
 }
 int main(int argc, char *argv[])
@@ -398,12 +424,7 @@ int main(int argc, char *argv[])
         thread_data[ii].insert_percent = Params.insert_percent;
 
         if (ii < Params.writers)
-        {
-            if (Params.mode == MODE_READ)
-                thread_data[ii].mode = MODE_WRITE;
-            else
-                thread_data[ii].mode = Params.mode;
-        }
+            thread_data[ii].mode = MODE_WRITE;
         else
             thread_data[ii].mode = Params.mode;
 

@@ -55,7 +55,7 @@ static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
 #define RCU_MAX_BLOCKS      500
 #define BLOCKS_FOR_FREE     5
 #else
-#define RCU_MAX_BLOCKS      20
+#define RCU_MAX_BLOCKS      40
 #define BLOCKS_FOR_FREE     (RCU_MAX_BLOCKS-2)
 #endif
 
@@ -101,6 +101,7 @@ typedef struct
 
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         epoch_list_t *Thread_Epoch;
+void check_lock_valid(void *lock);
 //**********************************************
 unsigned long long *get_thread_stats(unsigned long long a, unsigned long long b,
         unsigned long long c, unsigned long long d, unsigned long long e,
@@ -291,6 +292,22 @@ void *lock_init()
     return lock;
 }
 
+void check_lock_valid(void *lock)
+{
+    int ii;
+    rp_lock_t *rp_lock = (rp_lock_t *)lock;
+    volatile epoch_list_t *list = rp_lock->epoch_list;
+
+    printf("Thread list: ");
+    for (ii=0; ii<5&& list!=NULL; ii++)
+    {
+        printf("%d ", (int)(list->thread_id));
+        list = list->next;
+    }
+
+    printf("\n");
+    assert(list==NULL);
+}
 void lock_thread_init(void *lock, int thread_id)
 {
     int ii;
@@ -318,6 +335,7 @@ void lock_thread_init(void *lock, int thread_id)
 
 	// Let other rp_wait_grace_period() instances move ahead.
 	write_unlock(lock);
+
 }
 
 void lock_thread_close(void *arg, int thread_id) {}
@@ -398,6 +416,9 @@ void rp_free(void *lock, void (*func)(void *ptr), void *ptr)
     int head;
 
     assert(ptr != NULL);
+#ifdef DEBUG
+    rbnode_invalid((rbnode_t *)ptr, 6);
+#endif
 #ifdef MULTIWRITERS
     // we need to loop until we have the write_lock AND space for our block
     // If there isn't space, we need to release the write_lock to allow
