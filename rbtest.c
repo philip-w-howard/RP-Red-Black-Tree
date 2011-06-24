@@ -120,6 +120,7 @@ int TraverseN(unsigned long *random_seed, param_t *params)
     void *value;
     long key = -1;
 
+    //printf("TRAVERSAL N ******************************************\n");
     value = rb_first(My_Tree, &new_key);
     assert(new_key == -1);
 

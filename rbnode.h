@@ -25,6 +25,10 @@
 #define RED		    1
 #define BLACK_BLACK 2
 
+#ifdef URCU
+#include <urcu.h>
+#endif
+
 typedef unsigned long long version_t;
 
 typedef struct rbnode_s
@@ -48,6 +52,11 @@ typedef struct rbnode_s
     // AVL
     volatile int height;
     volatile version_t changeOVL;
+#ifdef URCU
+    struct rcu_head urcu_head;
+    void (*func)(void *ptr);
+#endif
+
 } rbnode_t;
 
 rbnode_t *rbnode_create(long key, void *value);

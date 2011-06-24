@@ -13,12 +13,13 @@ endif
 URCUFLAGS = -L/u/pwh/local/lib -DURCU -D_LGPL_SOURCE
 FGFLAGS = -DFG_LOCK
 RCUFLAGS = -DRCU
-NGPFLAGS = $(RCUFLAGS) -DNO_GRACE_PERIOD
+NGPFLAGS = $(URCUFLAGS) -DNO_GRACE_PERIOD
 MULTIFLAGS = -DMULTIWRITERS
 AVLFLAGS = $(MULTIFLAGS) $(FGFLAGS)
 STMFLAGS = -DSTM -I/u/pwh/swissTM/swissTM_word/include # -DRPSTM_STATS # -DRP_FINDS -DRP_UPDATE
 RPSTMFLAGS = -DRP_STM
 CFLAGS = -Wall -I/u/pwh/local/include $(ARCHFLAGS) -O0 # -DDEBUG # -pg 
+URCULFLAGS = -lurcu -lwfqueue 
 LFLAGS = -lrt $(CFLAGS)
 STM_LIB = -lwlpdstm
 STMRP_LIB = -lwlpdstm_rp
@@ -27,7 +28,7 @@ STM_LFLAGS = -L/u/pwh/swissTM/swissTM_word/lib
 
 CC = gcc
 
-TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lrcu rb_lock rb_nolock rb_stm rb_rpstm rb_rpstm_rp parse ngp ccavl rpavl parse csvparse # stmbad # ccavl rpavl rwlravl rwlwavl lockavl nolockavl rcutest ll_rwlr # rb_urcu urcutest 
+TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lrcu rb_lock rb_nolock rb_stm rb_rpstm rb_rpstm_rp ngp ccavl rpavl rb_urcu parse csvparse # stmbad # ccavl rpavl rwlravl rwlwavl lockavl nolockavl rcutest ll_rwlr # rb_urcu urcutest 
 all: $(TARGETS)
 
 stuff: aotest
@@ -58,9 +59,6 @@ rbtest.o: rbtest.c tests.h
 
 rcu.o: rcu.c 
 	$(CC) -c rcu.c $(CFLAGS) -DRCU
-
-urcu.o: urcu.c 
-	$(CC) -c urcu.c $(CFLAGS) $(URCUFLAGS)
 
 rpavl: rbmain.c rpavl.c avl.h rcu.c rbtest.o
 	$(CC) -c rbtest.c $(CFLAGS) $(RCUFLAGS)
@@ -164,12 +162,12 @@ ll_rwlr: rbmain.c lltest.o rwl_read.o
 	$(CC) -c rbtest.c $(CFLAGS)
 	$(CC) -o ll_rwlr $(LFLAGS) rbmain.c rwl_read.o lltest.o
 
-ngp: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c 
+ngp: rbmain.c rbnode.c rbtree.c urcu.c rbtest.c 
 	$(CC) -c rbtest.c $(CFLAGS) $(NGPFLAGS)
 	$(CC) -c rbnode.c $(CFLAGS)  $(NGPFLAGS)
-	$(CC) -c rcu.c $(CFLAGS)  $(NGPFLAGS)
+	$(CC) -c urcu.c $(CFLAGS)  $(NGPFLAGS)
 	$(CC) -c rbtree.c $(CFLAGS)  $(NGPFLAGS)
-	$(CC) -o ngp $(LFLAGS) $(NGPFLAGS) rbmain.c rbtest.o rbnode.o rbtree.o rcu.o -DALG_NAME=\"ngp\" 
+	$(CC) -o ngp $(LFLAGS) $(NGPFLAGS) rbmain.c rbtest.o rbnode.o rbtree.o urcu.o -DALG_NAME=\"ngp\" $(URCULFLAGS)
 
 rb_rcu: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
 	$(CC) -c rbnode.c $(CFLAGS) $(RCUFLAGS)
@@ -189,11 +187,12 @@ rb_lrcu: rbmain.c rbnode.c rbtree.c rcu.c rbtest.c
 rcutest: rcutest.c rcu.o rbtest.o
 	$(CC) -o rcutest $(CFLAGS) rcutest.c -DRCU rcu.o
 
-rb_urcu: rbmain.c rbnode.c rbtree.c urcu.o rbtest.c
-	$(CC) -c rbtest.c $(CFLAGS) $(RCUFLAGS)
-	$(CC) -c rbnode.c $(CFLAGS) 
+rb_urcu: rbmain.c rbnode.c rbtree.c urcu.c rbtest.c
+	$(CC) -c urcu.c   $(CFLAGS) $(URCUFLAGS)
+	$(CC) -c rbtest.c $(CFLAGS) $(URCUFLAGS)
+	$(CC) -c rbnode.c $(CFLAGS) $(URCUFLAGS) 
 	$(CC) -c rbtree.c $(CFLAGS) $(URCUFLAGS)
-	$(CC) -o rb_urcu $(LFLAGS) rbmain.c $(objects) urcu.o -lurcu -lurcu-defer 
+	$(CC) -o rb_urcu $(LFLAGS)  $(URCUFLAGS) rbmain.c $(objects) urcu.o $(URCULFLAGS)
 
 rb_lock: rbmain.c rbnode.c rbtree.c lock.o rbtest.c
 	$(CC) -c rbtest.c $(CFLAGS) 
@@ -208,7 +207,7 @@ rb_nolock: rbmain.c rbnode.c rbtree.c nolock.o rbtest.c
 	$(CC) -o rb_nolock $(LFLAGS) rbmain.c $(objects) nolock.o
 
 urcutest: urcutest.c rbtest.o
-	$(CC) -o urcutest $(LFLAGS) $(URCUFLAGS) urcutest.c -lurcu -lurcu-defer 
+	$(CC) -o urcutest $(LFLAGS) $(URCUFLAGS) urcutest.c -lurcu # -lurcu-defer 
 
 parse: parse.c 
 	$(CC) -g -o parse -Wall parse.c

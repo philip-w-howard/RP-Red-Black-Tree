@@ -26,10 +26,14 @@
 #include <pthread.h>
 
 #include <urcu.h>
-#include <urcu-defer.h>
+//#include <urcu-defer.h>
 
 #include "lock.h"
 #include "rbnode.h"
+
+#define container_of(ptr, type, member) ({\
+        const typeof( ((type *)0)->member) *__mptr = (ptr);\
+        (type *)( (char *)__mptr - offsetof(type,member) );})
 
 char *implementation_name()
 {
@@ -62,8 +66,8 @@ typedef struct
 
 typedef struct
 {
-    volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
-        block_list_t block;
+    //volatile __attribute__((__aligned__(CACHE_LINE_SIZE))) 
+    //    block_list_t block;
     __attribute__((__aligned__(CACHE_LINE_SIZE))) 
         pthread_mutex_t lock;
 } urcu_lock_t;
@@ -145,13 +149,14 @@ void lock_thread_close(void *lock, int thread_id)
 
 void rcu_synchronize(void *lock)
 {
-    urcu_lock_t *urcu_lock = (urcu_lock_t *)lock;
-    int head;
+    //urcu_lock_t *urcu_lock = (urcu_lock_t *)lock;
+    //int head;
 
     synchronize_rcu();
 
     Thread_Stats[STAT_SYNC]++;
     
+#ifdef REMOVE
     // since a grace period just expired, we might as well clear out the
     // delete buffer
     head = urcu_lock->block.head;
@@ -166,9 +171,11 @@ void rcu_synchronize(void *lock)
     }
 
     urcu_lock->block.head = 0;
+#endif
 }
 
-void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
+#ifdef REMOVE
+void nonu_rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
 {
     urcu_lock_t *urcu_lock = (urcu_lock_t *)lock;
 
@@ -181,9 +188,17 @@ void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
     urcu_lock->block.block[urcu_lock->block.head].func = func;
     urcu_lock->block.head++;
 }
-void xrcu_free(void *lock, void (*func)(void *ptr), void *ptr)
+#endif
+
+static void free_func(struct rcu_head *head)
 {
-//    synchronize_rcu();
-//    free(ptr);
-    defer_rcu(func, ptr);
+    rbnode_t *node = container_of(head, rbnode_t, urcu_head);
+    node->func(node);
+}
+
+void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
+{
+    rbnode_t *node = (rbnode_t *)ptr;
+    node->func = func;
+//    call_rcu(&node->urcu_head, free_func);
 }

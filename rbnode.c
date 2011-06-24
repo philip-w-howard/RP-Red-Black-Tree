@@ -92,6 +92,7 @@ static void *rb_alloc()
     return &(ptr->node);
 }
 //***********************************
+#ifdef DEBUG
 static void check_stack(void *ptr)
 {
 #if !defined(STM)
@@ -102,6 +103,7 @@ static void check_stack(void *ptr)
     }
 #endif
 }
+#endif
 //***********************************
 void rbnode_free(void *ptr)
 {

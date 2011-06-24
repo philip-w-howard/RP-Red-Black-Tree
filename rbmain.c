@@ -61,7 +61,7 @@ unsigned long init_random_seed()
     clock_gettime(CLOCK_REALTIME, &cur_time);
     seed = cur_time.tv_sec + cur_time.tv_nsec;
 
-seed = 0x753a428b754c985d;
+//seed = 0x753a428b754c985d;
 
     return seed;
 }
@@ -251,6 +251,7 @@ void *thread_func(void *arg)
     // copy the thread stats from thread local go global memory
     stats = get_thread_stats(n_reads, n_read_fails, n_writes, n_write_fails, 0, 0);
     stat_buff = (unsigned long long *)malloc((stats[0]+1)*sizeof(unsigned long long));
+	assert(stat_buff != NULL);
     memcpy(stat_buff, stats, (stats[0]+1)*sizeof(unsigned long long));
 
     return stat_buff;
@@ -400,11 +401,6 @@ int main(int argc, char *argv[])
 
     parse_args(argc, argv);
 
-    for (ii=0; ii<MAX_STATS; ii++)
-    {
-        tot_stats[ii] = 0;
-    }
-
     printf("Test: %s %d readers %d writers %d mode %d %d %d %d\n", 
             Params.name, Params.size,
             Params.readers, Params.writers, Params.mode, Params.scale, 
@@ -413,6 +409,11 @@ int main(int argc, char *argv[])
     lock = lock_init();
     lock_thread_init(lock, 0);
     my_data = Init_Data(Params.size, lock, &Params);
+
+    for (ii=0; ii<MAX_STATS; ii++)
+    {
+        tot_stats[ii] = 0;
+    }
 
     //if (Params.stm_stats) rb_output(my_data);
 
@@ -479,6 +480,7 @@ int main(int argc, char *argv[])
             stats = (unsigned long long *)vstats;
             printf("Thr %2d ", ii);
 
+            assert(stats[0] < MAX_STATS);
             for (jj=1; jj<stats[0]+1; jj++)
             {
                 printf(" %'7lld", stats[jj]);
@@ -502,5 +504,5 @@ int main(int argc, char *argv[])
 #ifdef STM
     if (Params.stm_stats) wlpdstm_print_stats();
 #endif
-    return 0;
+    return 1;
 }

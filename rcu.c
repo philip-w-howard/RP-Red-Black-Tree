@@ -39,7 +39,7 @@ char *implementation_name()
 #endif
 }
 
-#define NSTATS      16
+#define NSTATS      14
 #define STAT_READ   7
 #define STAT_WRITE  8
 #define STAT_SPINS  9
@@ -55,7 +55,7 @@ static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
 #define RCU_MAX_BLOCKS      500
 #define BLOCKS_FOR_FREE     5
 #else
-#define RCU_MAX_BLOCKS      40
+#define RCU_MAX_BLOCKS      20
 #define BLOCKS_FOR_FREE     (RCU_MAX_BLOCKS-2)
 #endif
 
@@ -322,6 +322,7 @@ void lock_thread_init(void *lock, int thread_id)
 
     // create a thread private epoch 
     Thread_Epoch = (epoch_list_t *)malloc(sizeof(epoch_list_t));
+    assert(Thread_Epoch != NULL);
     
 	/* guard against multiple thread start-ups and grace periods */
 	write_lock(lock);
@@ -456,6 +457,7 @@ void rp_free(void *lock, void (*func)(void *ptr), void *ptr)
 
     Thread_Stats[STAT_FREE]++;
     head = rp_lock->block.head;
+    assert(head < RCU_MAX_BLOCKS);
     rp_lock->block.block[head].block = ptr;
     rp_lock->block.block[head].func = func;
     head++;
