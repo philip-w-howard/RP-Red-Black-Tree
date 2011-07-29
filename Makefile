@@ -28,8 +28,13 @@ STM_LFLAGS = -L/u/pwh/swissTM/swissTM_word/lib
 
 CC = gcc
 
-TARGETS = rb_rwl_write rb_rwl_read rb_rcu rb_lrcu rb_lock rb_nolock rb_stm rb_rpstm rb_rpstm_rp ngp ccavl rpavl rb_urcu parse csvparse # stmbad # ccavl rpavl rwlravl rwlwavl lockavl nolockavl rcutest ll_rwlr # rb_urcu urcutest 
+TARGETS = rb_prw rb_rwl_write rb_rwl_read rb_rcu rb_lrcu rb_lock rb_nolock rb_stm rb_rpstm rb_rpstm_rp ngp ccavl rpavl rb_urcu parse csvparse # stmbad # ccavl rpavl rwlravl rwlwavl lockavl nolockavl rcutest ll_rwlr # rb_urcu urcutest 
+
+LL_TARGETS = ll_nolock ll_rp ll_rwlr ll_rwlw ll_lrp ll_prw
+
 all: $(TARGETS)
+
+ll: $(LL_TARGETS)
 
 stuff: aotest
 
@@ -46,6 +51,7 @@ objects = rbnode.o \
 all_objs = $(objects) \
 		  lock.o \
 		  nolock.o \
+		  prwlock.o \
 		  rwl_read.o \
 		  rwl_write.o \
 		  rcu.o \
@@ -154,13 +160,35 @@ rb_rwl_read: rbmain.c rbnode.c rbtree.c rwl_read.o rbtest.c
 	$(CC) -c rbtree.c $(CFLAGS) 
 	$(CC) -o rb_rwl_read $(LFLAGS) rbmain.c $(objects) rwl_read.o
 
-ll_nolock: rbmain.c lltest.o nolock.o
-	$(CC) -c rbtest.c $(CFLAGS)
-	$(CC) -o ll_nolock $(LFLAGS) rbmain.c nolock.o lltest.o
+ll_rp: rbmain.c lltest.c rcu.c
+	$(CC) -c lltest.c $(CFLAGS) $(RCUFLAGS) 
+	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) 
+	$(CC) -o ll_rp  $(LFLAGS) $(RCUFLAGS) rbmain.c lltest.o rcu.o
 
-ll_rwlr: rbmain.c lltest.o rwl_read.o
-	$(CC) -c rbtest.c $(CFLAGS)
-	$(CC) -o ll_rwlr $(LFLAGS) rbmain.c rwl_read.o lltest.o
+ll_lrp: rbmain.c lltest.c rcu.c
+	$(CC) -c lltest.c $(CFLAGS) $(RCUFLAGS) 
+	$(CC) -c rcu.c $(CFLAGS) $(RCUFLAGS) -DLINEARIZABLE
+	$(CC) -o ll_lrp  $(LFLAGS) $(RCUFLAGS) rbmain.c lltest.o rcu.o
+
+ll_nolock: rbmain.c lltest.c nolock.c
+	$(CC) -c lltest.c $(CFLAGS)
+	$(CC) -c nolock.c $(CFLAGS) 
+	$(CC) -o ll_nolock  $(LFLAGS) rbmain.c lltest.o nolock.o
+
+ll_rwlr: rbmain.c lltest.c rwl_read.c
+	$(CC) -c lltest.c $(CFLAGS)
+	$(CC) -c rwl_read.c $(CFLAGS) 
+	$(CC) -o ll_rwlr  $(LFLAGS) rbmain.c lltest.o rwl_read.o
+
+ll_rwlw: rbmain.c lltest.c rwl_write.c
+	$(CC) -c lltest.c $(CFLAGS)
+	$(CC) -c rwl_write.c $(CFLAGS) 
+	$(CC) -o ll_rwlw  $(LFLAGS) rbmain.c lltest.o rwl_write.o
+
+ll_prw: rbmain.c rbnode.c rbtree.c prwlock.o lltest.c
+	$(CC) -c lltest.c $(CFLAGS)
+	$(CC) -c rwl_read.c $(CFLAGS) 
+	$(CC) -o ll_prw  $(LFLAGS) rbmain.c lltest.o prwlock.o
 
 ngp: rbmain.c rbnode.c rbtree.c urcu.c rbtest.c 
 	$(CC) -c rbtest.c $(CFLAGS) $(NGPFLAGS)
@@ -193,6 +221,12 @@ rb_urcu: rbmain.c rbnode.c rbtree.c urcu.c rbtest.c
 	$(CC) -c rbnode.c $(CFLAGS) $(URCUFLAGS) 
 	$(CC) -c rbtree.c $(CFLAGS) $(URCUFLAGS)
 	$(CC) -o rb_urcu $(LFLAGS)  $(URCUFLAGS) rbmain.c $(objects) urcu.o $(URCULFLAGS)
+
+rb_prw: rbmain.c rbnode.c rbtree.c prwlock.o rbtest.c
+	$(CC) -c rbtest.c $(CFLAGS) 
+	$(CC) -c rbnode.c $(CFLAGS) 
+	$(CC) -c rbtree.c $(CFLAGS) 
+	$(CC) -o rb_prw $(LFLAGS) rbmain.c $(objects) prwlock.o
 
 rb_lock: rbmain.c rbnode.c rbtree.c lock.o rbtest.c
 	$(CC) -c rbtest.c $(CFLAGS) 

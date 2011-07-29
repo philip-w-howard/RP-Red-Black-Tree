@@ -21,6 +21,10 @@
 #include "lock.h"
 #include "tests.h"
 #include "rbmain.h"
+#include "rcu.h"
+
+#define LL_INSERT ll_sort_insert
+#define LL_FIND ll_sort_find
 
 typedef struct ll_node_s
 {
@@ -37,7 +41,7 @@ typedef struct ll_s
 } ll_t;
 
 unsigned long *Values;
-ll_t      *My_Data;
+ll_t      *My_List;
 
 //****************************************
 int ll_pre_insert(ll_t *list, unsigned long key, void *value)
@@ -49,40 +53,81 @@ int ll_pre_insert(ll_t *list, unsigned long key, void *value)
     new_node->next = node->next;
     new_node->key = key;
     new_node->value = value;
-    node->next = new_node;
+    rp_assign_pointer(node->next, new_node);
     list->size++;
 
     return 1;
 }
 //****************************************
-int ll_insert(ll_t *list, unsigned long key, void *value)
+int ll_post_insert(ll_t *list, unsigned long key, void *value)
 {
     ll_node_t *node = list->list;
+    ll_node_t *new_node;
+    ll_node_t *prev = node;
 
-    while (node->next != NULL)
+    while (node != NULL)
     {
-        node = node->next;
+        prev = node;
         if (node->key == key) return 0;
+        node = node->next;
+    }
+    if (node->key == key) return 0;
+
+    new_node = (ll_node_t *)malloc(sizeof(ll_node_t));
+    new_node->key = key;
+    new_node->value = value;
+    new_node->next = NULL;
+    list->size++;
+    rp_assign_pointer(prev->next, new_node);
+    rp_assign_pointer(node->next->next, new_node);
+
+    return 1;
+}
+//****************************************
+int ll_sort_insert(ll_t *list, unsigned long key, void *value)
+{
+    ll_node_t *node = list->list;
+    ll_node_t *new_node;
+    ll_node_t *prev = node;
+
+    while (node != NULL && node->key <= key)
+    {
+        prev = node;
+        if (node->key == key) return 0;
+        node = node->next;
     }
 
-    node->next = (ll_node_t *)malloc(sizeof(ll_node_t));
-    node = node->next;
-    node->key = key;
-    node->value = value;
-    node->next = NULL;
+    new_node = (ll_node_t *)malloc(sizeof(ll_node_t));
+    new_node->key = key;
+    new_node->value = value;
+    new_node->next = prev->next;
     list->size++;
+    rp_assign_pointer(prev->next, new_node);
 
     return 1;
 }
 //*******************************************
-void *ll_find(ll_t *list, unsigned long key)
+void *ll_full_find(ll_t *list, unsigned long key)
 {
-    ll_node_t *node = list->list;
+    ll_node_t *node = rp_dereference(list->list);
 
-    while (node->next != NULL)
+    while (node != NULL)
     {
-        node = node->next;
         if (node->key == key) return node->value;
+        node = rp_dereference(node->next);
+    }
+
+    return NULL;
+}
+//*******************************************
+void *ll_sort_find(ll_t *list, unsigned long key)
+{
+    ll_node_t *node = rp_dereference(list->list);
+
+    while (node != NULL && node->key <= key)
+    {
+        if (node->key == key) return node->value;
+        node = rp_dereference(node->next);
     }
 
     return NULL;
@@ -102,10 +147,9 @@ void *ll_remove(ll_t *list, unsigned long key)
         {
             prev_node->next = node->next;
             value = node->value;
-            free(node);
+            rp_free(list->lock, free, node);
             list->size--;
             return value;
-
         }
     }
 
@@ -119,34 +163,42 @@ void *Init_Data(int count, void *lock, param_t *params)
     unsigned long value;
 
     Values = (unsigned long *)malloc(count*sizeof(unsigned long));
-    My_Data = (ll_t *)malloc(sizeof(ll_t));
-    My_Data->list = (ll_node_t *)malloc(sizeof(ll_node_t));
-    My_Data->lock = lock;
-    My_Data->size = 0;
+    My_List = (ll_t *)malloc(sizeof(ll_t));
+    My_List->list = (ll_node_t *)malloc(sizeof(ll_node_t));
+    My_List->lock = lock;
+    My_List->size = 0;
 
     for (ii=0; ii<count; ii++)
     {
         value = get_random(&seed) % params->scale + 1;
-        while ( !ll_pre_insert(My_Data, value, (void *)value) )
+        while ( !LL_INSERT(My_List, value, (void *)value) )
         {
             value = get_random(&seed) % params->scale + 1;
         }
         Values[ii] = value;
     }
 
-    return My_Data;
+    return My_List;
+}
+//*******************************************
+static void do_fail(int read_elem, unsigned long key)
+{
+    printf("Failed to find %d %ld %ld\n", read_elem, key, Values[read_elem]);
+    Traverse(NULL, NULL);
 }
 //*******************************************
 int Read(unsigned long *random_seed, param_t *params)
 {
     int read_elem;
     void *value;
+    unsigned long key;
 
     read_elem = get_random(random_seed) % params->size;
-    read_lock(My_Data->lock);
-    value = ll_find(My_Data, Values[read_elem]);
-    read_unlock(My_Data->lock);
-    if ((unsigned long)value == Values[read_elem])
+    key = Values[read_elem];
+    read_lock(My_List->lock);
+    value = LL_FIND(My_List, key);
+    read_unlock(My_List->lock);
+    if ((unsigned long)value == key)
         return 0;
     else
         return 1;
@@ -160,14 +212,47 @@ int RRead(unsigned long *random_seed, param_t *params)
 //*******************************************
 int Delete(unsigned long *random_seed, param_t *params)
 {
-    printf("NOT IMPLEMENTED\n");
-    exit(-1);
+    int errors = 0;
+    void *value;
+    long int_value;
+    int_value = get_random(random_seed) % params->scale + 1;
+    write_lock(My_List->lock);
+    value = ll_remove(My_List, int_value);
+    write_unlock(My_List->lock);
+    if (value == NULL) errors++;
+
+    return errors;
 }
 //*******************************************
 int Insert(unsigned long *random_seed, param_t *params)
 {
-    printf("NOT IMPLEMENTED\n");
-    exit(-1);
+    int errors = 0;
+    int result;
+    long int_value;
+    int_value = get_random(random_seed) % params->scale + 1;
+    write_lock(My_List->lock);
+    result = LL_INSERT(My_List, int_value, (void *)int_value);
+    write_unlock(My_List->lock);
+    if (result != 1) errors++;
+
+    return errors;
+}
+//*******************************************
+static void test_data(param_t *params)
+{
+    int ii;
+    static int failures = 0;
+
+    for (ii=0; ii<params->size; ii++)
+    {
+        if (ll_full_find(My_List, Values[ii]) == NULL)
+        {
+            failures++;
+            printf("test_data failure: %d\n", failures);
+            do_fail(ii, Values[ii]);
+            break;
+        }
+    }
 }
 //*******************************************
 int Write(unsigned long *random_seed, param_t *params)
@@ -178,21 +263,44 @@ int Write(unsigned long *random_seed, param_t *params)
     long int_value;
 
     write_elem = get_random(random_seed) % params->size;
-    write_lock(My_Data->lock);
-    value = ll_remove(My_Data, Values[write_elem]);
-    write_unlock(My_Data->lock);
+    write_lock(My_List->lock);
+    value = ll_remove(My_List, Values[write_elem]);
+    write_unlock(My_List->lock);
     if (value == NULL) errors++;
 
     int_value = get_random(random_seed) % params->scale + 1;
-    write_lock(My_Data->lock);
-    while ( !ll_insert(My_Data, int_value, (void *)int_value) )
+    write_lock(My_List->lock);
+    while ( !LL_INSERT(My_List, int_value, (void *)int_value) )
     {
         int_value = get_random(random_seed) % params->scale + 1;
     }
-    write_unlock(My_Data->lock);
+    write_unlock(My_List->lock);
     Values[write_elem] = int_value;
+    //test_data(params);
 
     return errors;
+}
+//*******************************************
+int Traverse(unsigned long *random_seed, param_t *params)
+{
+    int index = 0;
+    ll_node_t *node = rp_dereference(My_List->list);
+
+    while (node->next != NULL)
+    {
+        node = rp_dereference(node->next);
+        printf("Traverse: %5d %ld\n", index, node->key);
+        index++;
+    }
+
+    //ll_full_find(My_List, 99700000000);
+    return 0;
+}
+//*******************************************
+int TraverseN(unsigned long *random_seed, param_t *params)
+{
+    ll_full_find(My_List, 99700000000);
+    return 0;
 }
 //*******************************************
 int Size(void *data_structure)
