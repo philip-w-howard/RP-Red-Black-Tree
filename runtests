@@ -1,18 +1,19 @@
 #! /bin/bash
 
 rm -f redblack.log
-for SIZE in 64 65536 ; do
-#for SIZE in 65536 ; do
+ACCESS=READ
+#for SIZE in 100 1000 10000 100000 1000000 ; do
+for SIZE in 64 ; do
   SCALE=$[ 100*$SIZE ]
     #for MODE in TRAVERSE TRAVERSEN ; do
-    for ACCESS in READ WRITE; do
-        for ((ii=0; ii<4; ii++)); do
+    for ACCESS in READ WRITE ; do
+        for ((ii=0; ii<1; ii++)); do
             #for CPUS in {1..16}; do
             #for CPUS in 1 2 3 4 5 6 7 8 12 16 24 32 40 48 56 64; do
+            for CPUS in 1 2 4 8 12 16 ; do
             #for CPUS in 1 2 4 8 16 32 64; do
-            for CPUS in 1 2 4 8 12 16; do
-                #for TEST in rb_nolock rb_rcu rb_stm rb_rpstm rb_rpstm_rp; do
-                for TEST in rb_rcu ngp; do
+                for TEST in rb_prw rb_rwl_read rb_rwl_write; do
+                #for TEST in rb_rcu rb_stm rb_rpstm rb_rpstm_rp; do
                 #for TEST in rb_rpstm_rp rb_stm rpavl ccavl ; do
                 #for TEST in ccavl rpavl rwlravl rwlwavl lockavl nolockavl ; do
                     if [ $ACCESS == WRITE ] ; then
@@ -23,11 +24,9 @@ for SIZE in 64 65536 ; do
                         WRITERS=0
                     fi
 
-                    echo "Iteration " $ii $TEST r:$READERS w:$WRITERS s:$SIZE S:$SCALE 
-                    #echo "Iteration " $ii $TEST $CPUS $ACCESS $SIZE $SCALE
-                    ./$TEST r:$READERS w:$WRITERS s:$SIZE S:$SCALE >> redblack.log
-                    #echo "./$TEST p:$ASYNC r:$READERS w:$WRITERS s:$SIZE"
                     who
+                    echo "Iteration " $ii $TEST r:$READERS w:$WRITERS s:$SIZE S:$SCALE 
+                    ./$TEST r:$READERS w:$WRITERS s:$SIZE S:$SCALE >> redblack.log
                 done
             done
         done
@@ -35,5 +34,5 @@ for SIZE in 64 65536 ; do
 done
 
 awk -f decoderand.awk redblack.log >redblack.txt
-parse redblack.txt avl.txt -avg
+parse redblack.txt rwl.txt -avg
 

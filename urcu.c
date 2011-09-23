@@ -37,7 +37,11 @@
 
 char *implementation_name()
 {
+#ifdef LINEARIZABLE
+    return "LURCU";
+#else
     return "URCU";
+#endif
 }
 
 #define NSTATS      11
@@ -109,6 +113,9 @@ void write_lock(void *lock)
 void write_unlock(void *lock)
 {
     urcu_lock_t *urcu_lock = (urcu_lock_t *)lock;
+#ifdef LINEARIZABLE
+    synchronize_rcu();
+#endif
     pthread_mutex_unlock( &urcu_lock->lock );
 }
 
@@ -200,5 +207,5 @@ void rcu_free(void *lock, void (*func)(void *ptr), void *ptr)
 {
     rbnode_t *node = (rbnode_t *)ptr;
     node->func = func;
-//    call_rcu(&node->urcu_head, free_func);
+    call_rcu(&node->urcu_head, free_func);
 }

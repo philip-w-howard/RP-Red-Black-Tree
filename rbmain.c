@@ -61,7 +61,7 @@ unsigned long init_random_seed()
     clock_gettime(CLOCK_REALTIME, &cur_time);
     seed = cur_time.tv_sec + cur_time.tv_nsec;
 
-seed = 0x753a428b754c985d;
+//seed = 0x753a428b754c985d;
 
     return seed;
 }
@@ -173,6 +173,15 @@ void *thread_func(void *arg)
             while (goflag == GOFLAG_RUN) 
             {
                 if (Read(&random_seed, &Params))
+                    n_read_fails++;
+                else
+                    n_reads++;
+            }
+            break;
+        case MODE_RREAD:
+            while (goflag == GOFLAG_RUN) 
+            {
+                if (RRead(&random_seed, &Params))
                     n_read_fails++;
                 else
                     n_reads++;
@@ -310,6 +319,8 @@ void parse_args(int argc, char *argv[])
             case 'm':
                 if (strcmp(value, "READ")==0)
                     Params.mode = MODE_READ;
+                else if (strcmp(value, "RREAD")==0)
+                    Params.mode = MODE_RREAD;
                 else if (strcmp(value, "WRITE") == 0)
                     Params.mode = MODE_WRITE;
                 else if (strcmp(value, "NOOP") == 0)
@@ -358,7 +369,7 @@ void parse_args(int argc, char *argv[])
                 break;
             case 'S':
                 Params.scale = atoi(value);
-                if (Params.scale < 10) usage(argc, argv, argv[ii]);
+                if (Params.scale < 2) usage(argc, argv, argv[ii]);
                 break;
             case 't':
                 Params.stm_stats = 1;

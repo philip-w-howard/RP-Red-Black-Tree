@@ -30,7 +30,7 @@ CC = gcc
 
 TARGETS = rb_prw rb_rwl_write rb_rwl_read rb_rcu rb_lrcu rb_lock rb_nolock rb_stm rb_rpstm rb_rpstm_rp ngp ccavl rpavl rb_urcu parse csvparse # stmbad # ccavl rpavl rwlravl rwlwavl lockavl nolockavl rcutest ll_rwlr # rb_urcu urcutest 
 
-LL_TARGETS = ll_nolock ll_rp ll_rwlr ll_rwlw ll_lrp ll_prw
+LL_TARGETS = ll_nolock ll_rp ll_rwlr ll_rwlw ll_lrp ll_prw ll_urcu ll_lurcu
 
 all: $(TARGETS)
 
@@ -41,6 +41,7 @@ stuff: aotest
 clean:
 	rm -f *.o
 	rm -f $(TARGETS)
+	rm -f $(LL_TARGETS)
 
 #all: gettimestamp gettimestampmp rcu rcu64 rcu_lock rcu_lock_percpu rcu_nest rcu_nest_qs rcu_qs rcu_ts
 
@@ -185,10 +186,20 @@ ll_rwlw: rbmain.c lltest.c rwl_write.c
 	$(CC) -c rwl_write.c $(CFLAGS) 
 	$(CC) -o ll_rwlw  $(LFLAGS) rbmain.c lltest.o rwl_write.o
 
-ll_prw: rbmain.c rbnode.c rbtree.c prwlock.o lltest.c
+ll_prw: rbmain.c prwlock.o lltest.c
 	$(CC) -c lltest.c $(CFLAGS)
 	$(CC) -c rwl_read.c $(CFLAGS) 
 	$(CC) -o ll_prw  $(LFLAGS) rbmain.c lltest.o prwlock.o
+
+ll_urcu: rbmain.c urcu.c lltest.c
+	$(CC) -c lltest.c $(CFLAGS) $(URCUFLAGS)
+	$(CC) -c urcu.c   $(CFLAGS) $(URCUFLAGS)
+	$(CC) -o ll_urcu $(LFLAGS)  $(URCUFLAGS) rbmain.c lltest.o urcu.o $(URCULFLAGS)
+
+ll_lurcu: rbmain.c urcu.c lltest.c
+	$(CC) -c lltest.c $(CFLAGS) $(URCUFLAGS)
+	$(CC) -c urcu.c   $(CFLAGS) $(URCUFLAGS) -DLINEARIZABLE
+	$(CC) -o ll_lurcu $(LFLAGS)  $(URCUFLAGS) rbmain.c lltest.o urcu.o $(URCULFLAGS)
 
 ngp: rbmain.c rbnode.c rbtree.c urcu.c rbtest.c 
 	$(CC) -c rbtest.c $(CFLAGS) $(NGPFLAGS)
