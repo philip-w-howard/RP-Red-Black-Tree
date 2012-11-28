@@ -1,7 +1,23 @@
-//******************************************************
-// 
-// Red/Black Tree implementation by Phil Howard
+//Copyright (c) 2010 Philip W. Howard
 //
+//Permission is hereby granted, free of charge, to any person obtaining a copy
+//of this software and associated documentation files (the "Software"), to deal
+//in the Software without restriction, including without limitation the rights
+//to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//copies of the Software, and to permit persons to whom the Software is
+//furnished to do so, subject to the following conditions:
+//
+//The above copyright notice and this permission notice shall be included in
+//all copies or substantial portions of the Software.
+//
+//THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+//FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+//OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+//THE SOFTWARE.
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -206,18 +222,43 @@ static void zig_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rb
     two = rbnode_copy(bprime->left);
     three = rbnode_copy(bprime->right);
 #elif defined(RCU)
+#ifdef SLOW
+    cprime = grandparent;
+    aprime = parent;
+    bprime = rbnode_copy(node);
+    two = bprime->left;
+    three = bprime->right;
+#else // !SLOW
     cprime = rbnode_copy(grandparent);
     aprime = rbnode_copy(parent);
     bprime = node;
     two = bprime->left;
     three = bprime->right;
-#else
+#endif
+#else // don't do copy-on-update
     aprime = parent;
     bprime = node;
     cprime = grandparent;
     two = bprime->left;
     three = bprime->right;
 #endif
+
+#if defined(RCU) && defined(SLOW)
+    bprime->right = cprime;
+    cprime->parent = bprime;
+
+    bprime->left = aprime;
+    aprime->parent = bprime;
+
+    fix_parent(tree, bprime, greatgrandparent, left);
+    rp_wait_grace_period(tree->lock);
+
+    aprime->right = two;
+    if (two != NULL) two->parent = aprime;
+
+    cprime->left = three;
+    if (three != NULL) three->parent = cprime;
+#else
     aprime->right = two;
     if (two != NULL) two->parent = aprime;
 
@@ -231,6 +272,8 @@ static void zig_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rb
     cprime->parent = bprime;
 
     fix_parent(tree, bprime, greatgrandparent, left);
+#endif
+
 #if defined(NO_GRACE_PERIOD)
     if (aprime->left != NULL) aprime->left->parent = aprime;
     if (cprime->right != NULL) cprime->right->parent = cprime;
@@ -252,8 +295,12 @@ static void zig_left(rbtree_t *tree, rbnode_t *grandparent, rbnode_t *parent, rb
     rp_free(tree->lock, rbnode_free, parent);
     rp_free(tree->lock, rbnode_free, grandparent);
 #elif defined(RCU)
+#ifdef SLOW
+    rp_free(tree->lock, rbnode_free, node);
+#else
     rp_free(tree->lock, rbnode_free, parent);
     rp_free(tree->lock, rbnode_free, grandparent);
+#endif
 #endif
 
     *a = aprime;
@@ -965,9 +1012,13 @@ void *rb_last(rbtree_t *tree, long *key)
     return value;
 }
 //***************************************
-rbnode_t *rb_next_n(rbnode_t *x)
+// O(N) traversal
+rbnode_t *rb_next(rbnode_t *x)
 {
     rbnode_t *xr,*y;
+#ifdef INSTRUMENTED
+#error this is INSTRUMENTED
+#endif
 
     if ((xr = rp_dereference(x->right)) != NULL) return leftmost(xr);
 
@@ -982,7 +1033,8 @@ rbnode_t *rb_next_n(rbnode_t *x)
     return y;
 }
 //***************************************
-void *rb_next(rbtree_t *tree, long prev_key, long *key)
+// O(N log(N)) traversal
+void *rb_next_nln(rbtree_t *tree, long prev_key, long *key)
 {
     static __thread char buff[1000];
 
@@ -994,7 +1046,7 @@ void *rb_next(rbtree_t *tree, long prev_key, long *key)
 
     read_lock(tree->lock);
     
-    node = tree->root;
+    node = rp_dereference(tree->root);
 
     strcat(buff, "ROOT");
 
@@ -1003,18 +1055,18 @@ void *rb_next(rbtree_t *tree, long prev_key, long *key)
         if (node->key == prev_key)
         {
             strcat(buff, " =right");
-            node = node->right;
+            node = rp_dereference(node->right);
         } 
         else if (node->key > prev_key)
         {
             strcat(buff, " left");
             bigger_node = node;
-            node = node->left;
+            node = rp_dereference(node->left);
         }
         else
         {
             strcat(buff, " right");
-            node = node->right;
+            node = rp_dereference(node->right);
         }
     }
 

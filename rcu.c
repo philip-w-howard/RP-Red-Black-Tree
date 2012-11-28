@@ -21,6 +21,7 @@
 ////#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <memory.h>
 #include <pthread.h>
 #include <assert.h>
@@ -34,12 +35,16 @@ char *implementation_name()
 {
 #ifdef LINEARIZABLE
     return "LRP";
+#elif defined(REALSLOW)
+    return "REALSLOWRP";
+#elif defined(SLOW)
+    return "SLOWRP";
 #else
     return "RP";
 #endif
 }
 
-#define NSTATS      14
+#define NSTATS      15
 #define STAT_READ   7
 #define STAT_WRITE  8
 #define STAT_SPINS  9
@@ -47,6 +52,7 @@ char *implementation_name()
 #define STAT_RWSPINS  11
 #define STAT_FREE   12
 #define STAT_FREE_SYNC 13
+#define STAT_DEREFS 14
 
 static __thread __attribute__((__aligned__(CACHE_LINE_SIZE)))
     unsigned long long Thread_Stats[NSTATS+1];
@@ -139,8 +145,19 @@ void read_lock(void *lock)
 
 }
 
+extern int RP_Wait_Time;
 void read_unlock(void *lock)
 {
+#if defined(REALSLOW)
+    //poll(NULL, 0, RP_Wait_Time);
+    //usleep(RP_Wait_Time);
+    int ii;
+    unsigned int val = 1;
+    for (ii=0; ii<RP_Wait_Time; ii++)
+    {
+        val = val*rand_r(&val);
+    }
+#endif
     Thread_Epoch->epoch--;
 }
 
@@ -502,3 +519,8 @@ void link_to_stm_lib()
 
 */
 
+void *rp_instrumented_dereference(void *p)
+{
+    Thread_Stats[STAT_DEREFS]++;
+    return p;
+}

@@ -22,17 +22,16 @@
 #include "tests.h"
 #include "rbmain.h"
 #include "rcu.h"
+#include "lltest.h"
 
-#define LL_INSERT ll_pre_insert
-#define LL_FIND ll_full_find
-#define LL_REMOVE ll_pre_remove
 
-typedef struct ll_node_s
-{
-    unsigned long key;
-    void *value;
-    struct ll_node_s *next;
-} ll_node_t;
+//#define LL_INSERT ll_pre_insert
+//#define LL_FIND ll_full_find
+//#define LL_REMOVE ll_pre_remove
+
+#define LL_INSERT ll_sort_insert
+#define LL_FIND ll_sort_find
+#define LL_REMOVE ll_sort_remove
 
 typedef struct ll_s
 {
@@ -402,7 +401,7 @@ int Traverse(unsigned long *random_seed, param_t *params)
     return 0;
 }
 //*******************************************
-int TraverseN(unsigned long *random_seed, param_t *params)
+int TraverseNLN(unsigned long *random_seed, param_t *params)
 {
     ll_full_find(My_List, 99700000000);
     return 0;

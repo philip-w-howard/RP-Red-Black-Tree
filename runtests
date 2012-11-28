@@ -3,16 +3,20 @@
 rm -f redblack.log
 ACCESS=READ
 #for SIZE in 100 1000 10000 100000 1000000 ; do
-for SIZE in 64 ; do
+for SIZE in 64; do
+#for SIZE in 64 65536; do
   SCALE=$[ 100*$SIZE ]
     #for MODE in TRAVERSE TRAVERSEN ; do
-    for ACCESS in READ WRITE ; do
-        for ((ii=0; ii<1; ii++)); do
-            #for CPUS in {1..16}; do
+    for ACCESS in READ WRITE; do
+        for ((ii=0; ii<16; ii++)); do
+            #for CPUS in 15 ; do
             #for CPUS in 1 2 3 4 5 6 7 8 12 16 24 32 40 48 56 64; do
-            for CPUS in 1 2 4 8 12 16 ; do
+            #for CPUS in 1 2 4 8 12 16 ; do
+            for CPUS in 1 2 3 4 6 8 10 12 14 16 ; do
             #for CPUS in 1 2 4 8 16 32 64; do
-                for TEST in rb_prw rb_rwl_read rb_rwl_write; do
+                #for TEST in stuff; do
+                for TEST in rb_rcu rb_rwl_read rb_rwl_write ccavl rb_nolock rb_lock; do
+                #for TEST in rb_rcu rb_slow_rcu rb_real_slow_rcu ; do
                 #for TEST in rb_rcu rb_stm rb_rpstm rb_rpstm_rp; do
                 #for TEST in rb_rpstm_rp rb_stm rpavl ccavl ; do
                 #for TEST in ccavl rpavl rwlravl rwlwavl lockavl nolockavl ; do
@@ -27,6 +31,9 @@ for SIZE in 64 ; do
                     who
                     echo "Iteration " $ii $TEST r:$READERS w:$WRITERS s:$SIZE S:$SCALE 
                     ./$TEST r:$READERS w:$WRITERS s:$SIZE S:$SCALE >> redblack.log
+                    #./rb_urcu r:$READERS w:$WRITERS s:$SIZE S:$SCALE m:TRAVERSE n:COMBO R:10 >> redblack.log
+                    #./rb_urcu r:$READERS w:$WRITERS s:$SIZE S:$SCALE m:TRAVERSENLN n:SLOWRP R:10 >> redblack.log
+                    #./ngp r:$READERS w:$WRITERS s:$SIZE S:$SCALE m:TRAVERSE n:RP R:10 >> redblack.log
                 done
             done
         done
@@ -34,5 +41,5 @@ for SIZE in 64 ; do
 done
 
 awk -f decoderand.awk redblack.log >redblack.txt
-parse redblack.txt rwl.txt -avg
+parse redblack.txt rbtest3.txt -stdev
 

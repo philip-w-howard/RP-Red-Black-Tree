@@ -258,10 +258,10 @@ int rbnode_invalid(rbnode_t *node, int depth)
     //if (node->height != 1+MAX(height(node->left), height(node->right))) return 7;
     //if (node->changeOVL & 0x07LL) return 8;
 
-    if (node->left != NULL && node->right == NULL) only_child = node->left;
-    if (node->left == NULL && node->right != NULL) only_child = node->right;
+    //if (node->left != NULL && node->right == NULL) only_child = node->left;
+    //if (node->left == NULL && node->right != NULL) only_child = node->right;
 
-    if (only_child != NULL && only_child->color==BLACK) return 6;
+    //if (only_child != NULL && only_child->color==BLACK) return 6;
 
     //if (eptr->band1 != 0x0BADBAD0) return 6;
     //if (eptr->band2 != 0x0DABDAB0) return 7;

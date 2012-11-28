@@ -1,3 +1,23 @@
+//Copyright (c) 2010 Philip W. Howard
+//
+//Permission is hereby granted, free of charge, to any person obtaining a copy
+//of this software and associated documentation files (the "Software"), to deal
+//in the Software without restriction, including without limitation the rights
+//to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//copies of the Software, and to permit persons to whom the Software is
+//furnished to do so, subject to the following conditions:
+//
+//The above copyright notice and this permission notice shall be included in
+//all copies or substantial portions of the Software.
+//
+//THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+//FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+//OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+//THE SOFTWARE.
+
 #include "lock.h"
 #include "rbtree.h"
 #include "tests.h"
@@ -31,13 +51,21 @@ void *Init_Data(int count, void *lock, param_t *params)
     My_Tree = (rbtree_t *)malloc(sizeof(rbtree_t));
     rb_create(My_Tree, lock);
 
-    if (params->mode == MODE_TRAVERSE || params->mode == MODE_TRAVERSEN)
+#ifndef VALIDATE
+    if (params->mode == MODE_TRAVERSE || params->mode == MODE_TRAVERSENLN)
     {
         rb_insert(My_Tree, -1, (void *)-1);
         rb_insert(My_Tree, params->scale+1, (void *)(long)params->scale+1);
-        count -= 2;
+        //count -= 2;
     }
+#endif
 
+#ifdef VALIDATE
+    for (value=1; value<=count; value++)
+    {
+        rb_insert(My_Tree, value, (void *)(value));
+    }
+#else
     for (ii=0; ii<count; ii++)
     {
         value = get_random(&seed) % params->scale + 1;
@@ -45,23 +73,76 @@ void *Init_Data(int count, void *lock, param_t *params)
         {
             value = get_random(&seed) % params->scale + 1;
         }
-#ifdef DEBUG
-        printf("Insert %ld\n", value);
-        check_tree();
+#ifdef DEBUG_INSERT
+        if (ii%1000 == 0)
+        printf("Insert %d %ld\n", ii, value);
+        //check_tree();
 #endif
 
         Values[ii] = value;
     }
+#endif
 
     return My_Tree;
 }
+#ifdef VALIDATE
+// ******************************************
+// O(N) traversal
 int Traverse(unsigned long *random_seed, param_t *params)
 {
     rbnode_t *new_node, *node;
     long key = -1;
+    long index = 1;
+    int errors = 0;
+
 #ifdef DEBUG
     long values[1000];
-    int index = 0;
+    index = 0;
+    //printf("TRAVERSAL ******************************************\n");
+#endif
+    read_lock(My_Tree->lock);
+    new_node = rb_first_n(My_Tree);
+
+    while (new_node != NULL)
+    {
+        node = new_node;
+        key = node->key;
+
+        if (key != index)
+        {
+            if (index & 0x0001) index++;
+            errors++;
+        }
+        if (key != index)
+        {
+            printf(" ***************** INVALID TRAVERSAL ******************\n");
+            printf(" ***************** INVALID TRAVERSAL ******************\n");
+            printf("Expected %ld found %ld\n", index, key);
+            printf(" ***************** INVALID TRAVERSAL ******************\n");
+            printf(" ***************** INVALID TRAVERSAL ******************\n");
+            read_unlock(My_Tree->lock);
+            exit(-1);
+            return 0;
+        }
+        index++;
+        new_node = rb_next(node);
+    }
+
+    read_unlock(My_Tree->lock);
+
+    return errors;
+}
+#else // !VALIDATE
+// ******************************************
+// O(N) traversal
+int Traverse(unsigned long *random_seed, param_t *params)
+{
+    rbnode_t *new_node, *node;
+    long key = -1;
+
+#ifdef DEBUG
+    long values[1000];
+    index = 0;
     //printf("TRAVERSAL ******************************************\n");
 #endif
 #ifdef NO_GRACE_PERIOD
@@ -80,7 +161,7 @@ int Traverse(unsigned long *random_seed, param_t *params)
 #ifdef DEBUG
         values[index++] = key;
 #endif
-        new_node = rb_next_n(node);
+        new_node = rb_next(node);
 #ifdef DEBUG
         if (new_node != NULL && node->key >= new_node->key)
         {
@@ -114,20 +195,62 @@ int Traverse(unsigned long *random_seed, param_t *params)
     assert(key == params->scale + 1);
     return 0;
 }
-int TraverseN(unsigned long *random_seed, param_t *params)
+#endif // VALIDATE
+
+
+#ifdef VALIDATE
+// ******************************************
+// O(N log(N)) traversal
+int TraverseNLN(unsigned long *random_seed, param_t *params)
+{
+    long new_key=0;
+    void *value;
+    long key = -1;
+    long index = 1;
+    int errors = 0;
+
+    //printf("TRAVERSAL ******************************************\n");
+    value = rb_first(My_Tree, &new_key);
+
+    while (value != NULL)
+    {
+        key = new_key;
+        if (key != index)
+        {
+            if (index & 0x0001) index++;
+            errors++;
+        }
+        if (key != index)
+        {
+            printf("****************** INVALID TRAVERSAL ***********************\n");
+            printf("found %ld expected %ld\n", key, index);
+            printf("****************** INVALID TRAVERSAL ***********************\n");
+            exit(-1);
+            return 0;
+        }
+
+        value = rb_next_nln(My_Tree, key, &new_key);
+        index++;
+    }
+    return errors;
+}
+#else // !VALIDATE
+// ******************************************
+// O(N log(N)) traversal
+int TraverseNLN(unsigned long *random_seed, param_t *params)
 {
     long new_key=0;
     void *value;
     long key = -1;
 
-    //printf("TRAVERSAL N ******************************************\n");
+    //printf("TRAVERSAL ******************************************\n");
     value = rb_first(My_Tree, &new_key);
     assert(new_key == -1);
 
     while (value != NULL)
     {
         key = new_key;
-        value = rb_next(My_Tree, key, &new_key);
+        value = rb_next_nln(My_Tree, key, &new_key);
         if (value != NULL && key >= new_key)
         {
             write_lock(My_Tree->lock);
@@ -143,6 +266,7 @@ int TraverseN(unsigned long *random_seed, param_t *params)
     assert(key == params->scale + 1);
     return 0;
 }
+#endif // VALIDATE
 int Read(unsigned long *random_seed, param_t *params)
 {
     int read_elem;
@@ -203,6 +327,33 @@ int Insert(unsigned long *random_seed, param_t *params)
 
     return errors;
 }
+#ifdef VALIDATE
+int Write(unsigned long *random_seed, param_t *params)
+{
+    long int_value;
+    void *value;
+
+    int_value = (get_random(random_seed) % params->size) + 1;
+
+    // make sure we have an odd value
+    int_value |= 0x0001;
+
+    value = rb_remove(My_Tree, int_value);
+    if (value == NULL)
+    {
+        printf("Failure to remove %ld\n", int_value);
+        exit(-2);
+    }
+
+    if (!rb_insert(My_Tree, int_value, (void *)int_value) )
+    {
+        printf("Failure to insert %ld\n", int_value);
+        exit(-3);
+    }
+
+    return 0;
+}
+#else // !VALIDATE
 int Write(unsigned long *random_seed, param_t *params)
 {
     int errors = 0;
@@ -234,6 +385,7 @@ int Write(unsigned long *random_seed, param_t *params)
 
     return errors;
 }
+#endif
 int Size(void *data_structure)
 {
     return rb_size((rbtree_t *)data_structure);

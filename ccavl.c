@@ -1420,13 +1420,13 @@ void *rb_first(rbtree_t *tree, long *key)
     return NULL;
 }
 //***********************************************
-rbnode_t *rb_next_n(rbnode_t *node)
+rbnode_t *rb_next(rbnode_t *node)
 {
     assert(!IMPLEMENTED);
     return NULL;
 }
 //***********************************************
-void *rb_next(rbtree_t *tree, long prev_key, long *key)
+void *rb_next_nln(rbtree_t *tree, long prev_key, long *key)
 {
     assert(!IMPLEMENTED);
     return NULL;

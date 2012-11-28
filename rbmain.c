@@ -41,6 +41,10 @@
 #include "my_stm.h"
 #endif
 
+#define RP_WAIT_SCALE 20
+#include <math.h>
+int RP_Wait_Time = 0;
+
 #define GOFLAG_INIT 0
 #define GOFLAG_RUN  1
 #define GOFLAG_STOP 2
@@ -237,15 +241,17 @@ void *thread_func(void *arg)
             while (goflag == GOFLAG_RUN) 
             {
                 if (Traverse(&random_seed, &Params))
+                {
                     n_read_fails++;
+                }
                 else
                     n_reads++;
             }
             break;
-        case MODE_TRAVERSEN:
+        case MODE_TRAVERSENLN:
             while (goflag == GOFLAG_RUN) 
             {
-                if (TraverseN(&random_seed, &Params))
+                if (TraverseNLN(&random_seed, &Params))
                     n_read_fails++;
                 else
                     n_reads++;
@@ -281,6 +287,17 @@ void usage(int argc, char *argv[], char *bad_arg)
 	exit(-1);
 }
 
+void set_RP_Wait_Time()
+{
+#ifdef REALSLOW
+    //RP_Wait_Time = (int) (log(Params.size) * RP_WAIT_SCALE - log(10)*RP_WAIT_SCALE);
+    //if (RP_Wait_Time < 0) RP_Wait_Time = 0;
+
+    RP_Wait_Time = Params.size;
+#else
+    RP_Wait_Time = 0;
+#endif
+}
 void parse_args(int argc, char *argv[])
 {
     int ii;
@@ -340,8 +357,8 @@ void parse_args(int argc, char *argv[])
                 }
                 else if (strcmp(value, "TRAVERSE") == 0)
                     Params.mode = MODE_TRAVERSE;
-                else if (strcmp(value, "TRAVERSEN") == 0)
-                    Params.mode = MODE_TRAVERSEN;
+                else if (strcmp(value, "TRAVERSENLN") == 0)
+                    Params.mode = MODE_TRAVERSENLN;
                 else
                     usage(argc, argv, argv[ii]);
                 break;
@@ -372,7 +389,15 @@ void parse_args(int argc, char *argv[])
                 if (Params.scale < 2) usage(argc, argv, argv[ii]);
                 break;
             case 't':
-                Params.stm_stats = 1;
+                //Params.mode = MODE_TRAVERSE;
+                //Params.update_percent = 0;
+                //Params.delete_percent = Params.update_percent/2;
+                //Params.insert_percent = Params.update_percent/2;
+                Params.size =  100000;
+                Params.scale = 10000000;
+                Params.readers = 0;
+                Params.writers = 1;
+                //Params.stm_stats = 1;
                 break;
             case 'u':
                 Params.update_percent = atoi(value);
@@ -389,6 +414,8 @@ void parse_args(int argc, char *argv[])
                 break;
         }
     }
+
+    set_RP_Wait_Time();
 }
 
 void thread_stuck(int id)
@@ -465,7 +492,7 @@ int main(int argc, char *argv[])
 
 	sleep(1);
     printf("init done\n");
-    printf("pre tree size: %d\n", Size(my_data));
+    printf("pre tree size: %d %d\n", Size(my_data), RP_Wait_Time);
 	sleep(1);
 	goflag = GOFLAG_RUN;
 	lock_mb();

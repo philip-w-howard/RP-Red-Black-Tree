@@ -607,7 +607,7 @@ void *rb_last(rbtree_t *tree, long *key)
     return value;
 }
 //***************************************
-rbnode_t *rb_next_n(rbnode_t *x)
+rbnode_t *rb_next(rbnode_t *x)
 {
     rbnode_t *xr,*y;
 
@@ -623,7 +623,7 @@ rbnode_t *rb_next_n(rbnode_t *x)
     return y;
 }
 //***************************************
-void *rb_next(rbtree_t *tree, long prev_key, long *key)
+void *rb_next_nln(rbtree_t *tree, long prev_key, long *key)
 {
     static __thread char buff[1000];
 

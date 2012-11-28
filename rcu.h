@@ -28,16 +28,28 @@
 #define CACHE_LINE_SIZE     128
 #endif
 
+void *rp_instrumented_dereference(void *p);
+
 #if defined(RCU) && defined(URCU)
 
+#ifdef INSTRUMENT
+#define rp_dereference(p)  ((typeof(p))rp_instrumented_dereference((p)))
+#else
+#define rp_dereference(p) (*(volatile typeof(p) *)&(p))
+#endif
+#define rp_assign_pointer(p,v) rcu_assign_pointer(p,v)
+#define rp_wait_grace_period(p) synchronize_rcu()
 //#define rp_free(l, f, p) defer_rcu(f,p)
-void rp_wait_grace_period(void *lock);
 void rp_free(void *lock, void (*func)(void *ptr), void *ptr);
 
 #elif defined(RCU)
 
 /* Assume DEC Alpha is dead.  Long live DEC Alpha. */
+#ifdef INSTRUMENT
+#define rp_dereference(p)  ((typeof(p))rp_instrumented_dereference((p)))
+#else
 #define rp_dereference(p) (*(volatile typeof(p) *)&(p))
+#endif
 #define rp_assign_pointer(p, v) ({ lock_mb(); (p) = (v); })
 void rp_wait_grace_period(void *lock);
 void rp_free(void *lock, void (*func)(void *ptr), void *ptr);

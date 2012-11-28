@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 typedef unsigned long long count_t;
 
@@ -43,6 +44,9 @@ static info_t *Info[MAX_SETUPS][MAX_TESTS];
 char *Input_Filename = NULL;
 char *Output_Filename = NULL;
 int  Compute_Average = 0;
+int  Compute_Std_Dev = 0;
+int  Check_Std_Dev = 0;
+double Check_Std_Dev_Limit = 0.05;
 
 static void init_data()
 {
@@ -115,13 +119,83 @@ static void output(FILE *output)
 
     for (ii=0; ii<Num_Tests; ii++)
     {
-        fprintf(output, "\t%s reads\t%s writes", Tests[ii], Tests[ii]);
+        if (Compute_Std_Dev)
+        {
+            fprintf(output, "\t%s reads \t%s read err\t%s writes\t%s write err",
+                    Tests[ii], Tests[ii], Tests[ii], Tests[ii]);
+        }
+        else
+        {
+            fprintf(output, "\t%s reads\t%s writes", Tests[ii], Tests[ii]);
+        }
     }
     fprintf(output, "\n");
 
     for (ii=0; ii<Num_Setups; ii++)
     {
-        if (Compute_Average)
+        // std dev = sqrt( (n*sum_sq - sum*sum)/n*(n-1) )
+        if (Compute_Std_Dev || Check_Std_Dev)
+        {
+            fprintf(output, "%s", Setups[ii]);
+
+            for (jj=0; jj<Num_Tests; jj++)
+            {
+                int count = 0;
+                count_t tot_reads = 0; 
+                count_t tot_reads_sq = 0; 
+                count_t tot_writes = 0;
+                count_t tot_writes_sq = 0;
+                double read_std_dev, write_std_dev;
+
+                while (Info[ii][jj] != NULL)
+                {
+                   count++;
+                   tot_reads += Info[ii][jj]->reads;
+                   tot_reads_sq += Info[ii][jj]->reads * Info[ii][jj]->reads;
+                   tot_writes += Info[ii][jj]->writes;
+                   tot_writes_sq += Info[ii][jj]->writes * Info[ii][jj]->writes;
+                   Info[ii][jj] = Info[ii][jj]->next;
+                }
+
+                if (count!=0)
+                {
+                    read_std_dev = (double)(count*tot_reads_sq - tot_reads*tot_reads);
+                    read_std_dev = sqrt(read_std_dev/(count*(count-1)));
+                    tot_reads /= count;
+                    write_std_dev = (double)(count*tot_writes_sq - tot_writes*tot_writes);
+                    write_std_dev = sqrt(write_std_dev/(count*(count-1)));
+                    tot_writes /= count;
+                }
+                else
+                {
+                    read_std_dev = 0;
+                    write_std_dev = 0;
+                    tot_reads = 0;
+                    tot_writes = 0;
+                }
+
+                if (Check_Std_Dev)
+                {
+                    if ( (tot_reads != 0 && (read_std_dev/tot_reads) > Check_Std_Dev_Limit)
+                            ||
+                        (tot_writes != 0 && (write_std_dev/tot_writes) > Check_Std_Dev_Limit)
+                       )
+                    {
+                        fprintf(stderr, "STD DEV LIMIT VIOLATION **********\n");
+                    }
+                }
+                if (Compute_Std_Dev)
+                {
+                    fprintf(output, "\t%lld\t%f\t%lld\t%f", 
+                        tot_reads, read_std_dev, tot_writes, write_std_dev);
+                } else {
+                    fprintf(output, "\t%lld\t%lld", 
+                        tot_reads, tot_writes);
+                }
+            }
+            fprintf(output, "\n");
+        }
+        else if (Compute_Average)
         {
             fprintf(output, "%s", Setups[ii]);
 
@@ -183,6 +257,10 @@ void parse_args(int argc, char **argv)
         {
             if (strcmp(argv[ii], "-avg") == 0) {
                 Compute_Average = 1;
+            } else if (strcmp(argv[ii], "-stdev") == 0) {
+                Compute_Std_Dev = 1;
+            } else if (strcmp(argv[ii], "-check") == 0) {
+                Check_Std_Dev = 1;
             } else {
                 fprintf(stderr, "Unrecognized command %s\n", argv[ii]);
                 exit(-1);
